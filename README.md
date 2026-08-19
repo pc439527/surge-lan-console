@@ -22,6 +22,12 @@ pnpm install
 pnpm dev
 ```
 
+### 验证（typecheck + lint + test + build）
+
+```bash
+pnpm verify
+```
+
 ### Docker 部署
 
 支持两种方式：
