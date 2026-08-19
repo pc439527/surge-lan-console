@@ -1,0 +1,8 @@
+node_modules
+dist
+.pnpm-store
+.git
+.gitignore
+coverage
+.vite
+docker-compose.yml

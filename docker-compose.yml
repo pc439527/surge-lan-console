@@ -1,0 +1,15 @@
+# Surge LAN Console — container deployment
+#   docker compose up -d --build
+#   → http://<host>:8080
+services:
+  surge-console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: surge-lan-console:0.1.0
+    container_name: surge-console
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
