@@ -95,12 +95,8 @@ export interface RequestItem {
   notes?: string[];
   inCurrentSpeed: number;
   failed: 1 | 0 | boolean;
-  status?:
-    | "Active"
-    | "Completed"
-    | "Rule Evaluating"
-    | "DNS Lookup"
-    | "Establishing Connection";
+  /** Free-form status string — Surge versions differ ("Active", "Completed", ...). */
+  status?: string | null;
   outCurrentSpeed: number;
   completed: 1 | 0 | boolean;
   modified: 1 | 0 | boolean;

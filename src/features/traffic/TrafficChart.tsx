@@ -12,6 +12,13 @@ interface TrafficChartProps {
   series: { time: number; upload: number; download: number }[];
 }
 
+/** Read a CSS custom property from :root (theme-aware, see tokens.css). */
+function cssVar(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 export function TrafficChart({ series }: TrafficChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -35,9 +42,13 @@ export function TrafficChart({ series }: TrafficChartProps) {
     const chart = chartRef.current;
     if (!chart) return;
 
-    const isDark = document.documentElement.classList.contains("dark");
-    const axisColor = isDark ? "#747d8b" : "#98a2b3";
-    const splitColor = isDark ? "rgba(255,255,255,.06)" : "rgba(15,23,42,.05)";
+    // Fix 12: business chart colors come from tokens.css, not hardcoded hex.
+    const upload = cssVar("--chart-upload", "#0a84ff");
+    const download = cssVar("--chart-download", "#bf5af2");
+    const axisColor = cssVar("--chart-axis", "#98a2b3");
+    const splitColor = cssVar("--chart-grid", "rgba(15,23,42,.05)");
+    const uploadArea = hexToRgba(upload, 0.08);
+    const downloadArea = hexToRgba(download, 0.08);
 
     chart.setOption({
       animationDuration: 120,
@@ -65,9 +76,9 @@ export function TrafficChart({ series }: TrafficChartProps) {
           type: "line",
           showSymbol: false,
           smooth: true,
-          lineStyle: { width: 2, color: "#0a84ff" },
-          itemStyle: { color: "#0a84ff" },
-          areaStyle: { color: "rgba(10,132,255,.08)" },
+          lineStyle: { width: 2, color: upload },
+          itemStyle: { color: upload },
+          areaStyle: { color: uploadArea },
           data: series.map((p) => [p.time, p.upload]),
         },
         {
@@ -75,9 +86,9 @@ export function TrafficChart({ series }: TrafficChartProps) {
           type: "line",
           showSymbol: false,
           smooth: true,
-          lineStyle: { width: 2, color: "#bf5af2" },
-          itemStyle: { color: "#bf5af2" },
-          areaStyle: { color: "rgba(191,90,242,.08)" },
+          lineStyle: { width: 2, color: download },
+          itemStyle: { color: download },
+          areaStyle: { color: downloadArea },
           data: series.map((p) => [p.time, p.download]),
         },
       ],
@@ -85,4 +96,15 @@ export function TrafficChart({ series }: TrafficChartProps) {
   }, [series]);
 
   return <div ref={ref} className="h-64 w-full" aria-label="流量图表" />;
+}
+
+/** #rrggbb -> rgba(r,g,b,a); leaves rgba()/named colors untouched. */
+function hexToRgba(color: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return color;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
 }

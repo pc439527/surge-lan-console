@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { formatEventTime } from "@/lib/format";
-import { useEventsQuery, type DisplayEvent } from "@/features/dashboard/dashboard-queries";
+import { useEventsQuery, type DisplayEvent } from "@/features/shared/queries";
 
 type Filter = "all" | "info" | "warn" | "error";
 

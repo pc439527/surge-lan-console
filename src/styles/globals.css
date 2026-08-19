@@ -18,6 +18,10 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-chart-upload: var(--chart-upload);
+  --color-chart-download: var(--chart-download);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
 
   --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);

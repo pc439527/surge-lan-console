@@ -5,7 +5,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { TrafficChart } from "@/features/traffic/TrafficChart";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
-import { useTrafficQuery } from "@/features/dashboard/dashboard-queries";
+import { useTrafficQuery } from "@/features/shared/queries";
 import { formatBytes } from "@/lib/format";
 
 type Range = "1m" | "5m" | "15m" | "30m";
@@ -19,34 +19,57 @@ const RANGES: { value: Range; label: string }[] = [
 
 const WINDOW_SECONDS: Record<Range, number> = { "1m": 60, "5m": 300, "15m": 900, "30m": 1800 };
 
+interface TrafficSample {
+  time: number;
+  uploadRate: number;
+  downloadRate: number;
+  totalUpload: number;
+  totalDownload: number;
+}
+
 export function TrafficPage() {
-  const { client } = useSurgeClientState();
+  const { client, connectionId } = useSurgeClientState();
   const traffic = useTrafficQuery();
   const [range, setRange] = useState<Range>("5m");
-  const [samples, setSamples] = useState<{ time: number; upload: number; download: number }[]>([]);
+  const [samples, setSamples] = useState<TrafficSample[]>([]);
 
-  // 1s sampling with a rolling window of the selected range
+  // Switching Surge instances must never mix charts (Fix 05).
+  useEffect(() => {
+    setSamples([]);
+  }, [connectionId]);
+
+  // 1s sampling with a rolling window of the selected range.
+  // Keeps cumulative bytes per sample so window totals use deltas (Fix 09).
   useEffect(() => {
     if (!traffic.data) return;
     const windowMs = WINDOW_SECONDS[range] * 1000;
     setSamples((prev) => {
       const next = [
         ...prev,
-        { time: Date.now(), upload: traffic.data!.uploadRate, download: traffic.data!.downloadRate },
+        {
+          time: Date.now(),
+          uploadRate: traffic.data!.uploadRate,
+          downloadRate: traffic.data!.downloadRate,
+          totalUpload: traffic.data!.totalUpload,
+          totalDownload: traffic.data!.totalDownload,
+        },
       ];
       const cutoff = Date.now() - windowMs;
       return next.filter((p) => p.time >= cutoff);
     });
-  }, [traffic.data, range]);
+  }, [traffic.data, range, connectionId]);
 
-  const totals = useMemo(
-    () =>
-      samples.reduce(
-        (acc, p) => ({ upload: acc.upload + p.upload, download: acc.download + p.download }),
-        { upload: 0, download: 0 },
-      ),
-    [samples],
-  );
+  // Fix 09: window totals = last cumulative value − first cumulative value.
+  // Summing bytes/sec samples drifts under background tabs / throttling.
+  const totals = useMemo(() => {
+    if (samples.length < 2) return { upload: 0, download: 0 };
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    return {
+      upload: Math.max(0, last.totalUpload - first.totalUpload),
+      download: Math.max(0, last.totalDownload - first.totalDownload),
+    };
+  }, [samples]);
 
   if (!client) return <NoClientNotice page="Traffic" />;
 
@@ -67,12 +90,13 @@ export function TrafficPage() {
         </Card>
         <Card className="p-4">
           <p className="text-[13px] text-text-secondary">当前下载</p>
-          <p className="mt-2 text-[28px] font-semibold tabular-nums text-[#bf5af2]">{formatBytes(traffic.data?.downloadRate ?? 0)}/s</p>
+          <p className="mt-2 text-[28px] font-semibold tabular-nums text-chart-download">{formatBytes(traffic.data?.downloadRate ?? 0)}/s</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[13px] text-text-secondary">窗口总量</p>
+          <p className="text-[13px] text-text-secondary">窗口流量</p>
           <p className="mt-2 text-[28px] font-semibold tabular-nums text-text-primary">
-            {formatBytes(totals.download)}
+            {formatBytes(totals.download)} <span className="text-sm font-normal text-text-tertiary">↓</span>{" "}
+            {formatBytes(totals.upload)} <span className="text-sm font-normal text-text-tertiary">↑</span>
           </p>
         </Card>
       </div>
@@ -85,7 +109,7 @@ export function TrafficPage() {
           {traffic.isLoading ? (
             <Skeleton className="h-80 w-full" />
           ) : (
-            <TrafficChart series={samples} />
+            <TrafficChart series={samples.map((s) => ({ time: s.time, upload: s.uploadRate, download: s.downloadRate }))} />
           )}
         </CardContent>
       </Card>

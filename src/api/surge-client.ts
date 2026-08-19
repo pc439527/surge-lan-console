@@ -5,6 +5,8 @@ import axios, {
 } from "axios";
 import { ENDPOINTS } from "./endpoints";
 import { SurgeError } from "./errors";
+import { z } from "zod";
+import { eventItemSchema, parseOrThrow, requestItemSchema, trafficSummarySchema } from "./schemas";
 import type {
   DnsCacheEntry,
   DnsResult,
@@ -35,9 +37,19 @@ export interface SurgeConnectionConfig {
   timeoutMs?: number;
 }
 
+/**
+ * Connection probe result — separates device reachability from API auth,
+ * so the UI can distinguish "device up, key invalid" from "device down".
+ */
 export interface TestConnectionResult {
-  ok: boolean;
+  /** The device responded over HTTP (any status). */
+  reachable: boolean;
+  /** API key was accepted (2xx from /v1/outbound). */
+  authenticated: boolean;
+  /** Round-trip latency in ms; null when the probe never completed. */
   latencyMs: number | null;
+  /** The underlying error, when the probe failed. */
+  error?: SurgeError;
 }
 
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -114,153 +126,192 @@ export class SurgeClient {
     return this.config;
   }
 
-  private async get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-    const res = await this.http.get<T>(url, { params } as AxiosRequestConfig);
+  private async get<T>(
+    url: string,
+    params?: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const res = await this.http.get<T>(url, { params, signal } as AxiosRequestConfig);
     return res.data;
   }
 
-  private async post<T>(url: string, body?: unknown): Promise<T> {
-    const res = await this.http.post<T>(url, body);
+  private async post<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+    const res = await this.http.post<T>(url, body, { signal } as AxiosRequestConfig);
     return res.data;
   }
 
   // ── Connection ────────────────────────────────────────────────
-  async testConnection(): Promise<TestConnectionResult> {
+  async testConnection(signal?: AbortSignal): Promise<TestConnectionResult> {
     const started = performance.now();
     try {
-      await this.http.get(ENDPOINTS.outbound);
-      return { ok: true, latencyMs: Math.round(performance.now() - started) };
+      await this.http.get(ENDPOINTS.outbound, { signal } as AxiosRequestConfig);
+      return {
+        reachable: true,
+        authenticated: true,
+        latencyMs: Math.round(performance.now() - started),
+      };
     } catch (error) {
       if (error instanceof SurgeError) {
-        // A reachable-but-rejecting device still counts as connected.
+        // The device responded, but rejected our X-Key (or an API error):
+        // reachable, NOT authenticated.
         if (error.kind === "authentication" || error.kind === "api") {
-          return { ok: true, latencyMs: Math.round(performance.now() - started) };
+          return {
+            reachable: true,
+            authenticated: false,
+            latencyMs: Math.round(performance.now() - started),
+            error,
+          };
         }
+        // Timeout / network / browser-security: the probe never completed.
+        return {
+          reachable: false,
+          authenticated: false,
+          latencyMs: null,
+          error,
+        };
       }
-      throw error;
+      return {
+        reachable: false,
+        authenticated: false,
+        latencyMs: null,
+        error: classifyError(error),
+      };
     }
   }
 
   // ── Features ─────────────────────────────────────────────────
   /** GET /v1/features/{name} -> {"enabled": bool} */
-  private async getFeatureState(endpoint: string): Promise<boolean> {
-    const raw = await this.get<{ enabled?: boolean }>(endpoint);
+  private async getFeatureState(endpoint: string, signal?: AbortSignal): Promise<boolean> {
+    const raw = await this.get<{ enabled?: boolean }>(endpoint, undefined, signal);
     return raw.enabled === true;
   }
 
-  private async setFeatureState(endpoint: string, enabled: boolean): Promise<void> {
-    await this.post<void>(endpoint, { enabled });
+  private async setFeatureState(endpoint: string, enabled: boolean, signal?: AbortSignal): Promise<void> {
+    await this.post<void>(endpoint, { enabled }, signal);
   }
 
-  async getFeatures(): Promise<FeatureState> {
+  async getFeatures(signal?: AbortSignal): Promise<FeatureState> {
     const [mitm, rewrite, scripting, capture] = await Promise.all([
-      this.getFeatureState(ENDPOINTS.featuresMitm),
-      this.getFeatureState(ENDPOINTS.featuresRewrite),
-      this.getFeatureState(ENDPOINTS.featuresScripting),
-      this.getFeatureState(ENDPOINTS.featuresCapture),
+      this.getFeatureState(ENDPOINTS.featuresMitm, signal),
+      this.getFeatureState(ENDPOINTS.featuresRewrite, signal),
+      this.getFeatureState(ENDPOINTS.featuresScripting, signal),
+      this.getFeatureState(ENDPOINTS.featuresCapture, signal),
     ]);
     return { mitm, rewrite, scripting, capture };
   }
 
-  async setFeature(feature: keyof FeatureState, enabled: boolean): Promise<void> {
+  async setFeature(feature: keyof FeatureState, enabled: boolean, signal?: AbortSignal): Promise<void> {
     const endpoint = {
       mitm: ENDPOINTS.featuresMitm,
       rewrite: ENDPOINTS.featuresRewrite,
       scripting: ENDPOINTS.featuresScripting,
       capture: ENDPOINTS.featuresCapture,
     }[feature];
-    await this.setFeatureState(endpoint, enabled);
+    await this.setFeatureState(endpoint, enabled, signal);
   }
 
   // ── Outbound mode ─────────────────────────────────────────────
   /** GET /v1/outbound -> {"mode": "rule"} */
-  async getOutboundMode(): Promise<OutboundMode> {
-    const raw = await this.get<{ mode?: OutboundMode }>(ENDPOINTS.outbound);
+  async getOutboundMode(signal?: AbortSignal): Promise<OutboundMode> {
+    const raw = await this.get<{ mode?: OutboundMode }>(ENDPOINTS.outbound, undefined, signal);
     return raw.mode ?? "rule";
   }
 
-  async setOutboundMode(mode: OutboundMode): Promise<void> {
-    await this.post<void>(ENDPOINTS.outbound, { mode });
+  async setOutboundMode(mode: OutboundMode, signal?: AbortSignal): Promise<void> {
+    await this.post<void>(ENDPOINTS.outbound, { mode }, signal);
   }
 
-  async getGlobalOutboundPolicy(): Promise<string> {
-    const raw = await this.get<{ policy?: string }>(ENDPOINTS.outboundGlobal);
+  async getGlobalOutboundPolicy(signal?: AbortSignal): Promise<string> {
+    const raw = await this.get<{ policy?: string }>(ENDPOINTS.outboundGlobal, undefined, signal);
     return raw.policy ?? "";
   }
 
   // ── Policies ──────────────────────────────────────────────────
   /** GET /v1/policies -> { "policy-groups": [...], proxies: [...] } */
-  async getPolicies(): Promise<Policies> {
-    return this.get<Policies>(ENDPOINTS.policies);
+  async getPolicies(signal?: AbortSignal): Promise<Policies> {
+    return this.get<Policies>(ENDPOINTS.policies, undefined, signal);
   }
 
   /** GET /v1/policy_groups -> { [groupName]: Policy[] } */
-  async getPolicyGroups(): Promise<PolicyGroups> {
-    return this.get<PolicyGroups>(ENDPOINTS.policyGroups);
+  async getPolicyGroups(signal?: AbortSignal): Promise<PolicyGroups> {
+    return this.get<PolicyGroups>(ENDPOINTS.policyGroups, undefined, signal);
   }
 
   /** GET /v1/policy_groups/select?group_name=X -> {"policy": "..."} */
-  async getGroupSelection(groupName: string): Promise<string> {
-    const raw = await this.get<GroupSelection>(ENDPOINTS.policyGroupsSelect, {
-      group_name: groupName,
-    });
+  async getGroupSelection(groupName: string, signal?: AbortSignal): Promise<string> {
+    const raw = await this.get<GroupSelection>(
+      ENDPOINTS.policyGroupsSelect,
+      { group_name: groupName },
+      signal,
+    );
     return raw.policy;
   }
 
   /** POST /v1/policy_groups/select {group_name, policy} */
-  async selectPolicy(groupName: string, policyName: string): Promise<void> {
-    await this.post<void>(ENDPOINTS.policyGroupsSelect, {
-      group_name: groupName,
-      policy: policyName,
-    });
+  async selectPolicy(groupName: string, policyName: string, signal?: AbortSignal): Promise<void> {
+    await this.post<void>(
+      ENDPOINTS.policyGroupsSelect,
+      { group_name: groupName, policy: policyName },
+      signal,
+    );
   }
 
   /** POST /v1/policy_groups/test {group_name} -> {"available": [...]} */
-  async testPolicyGroup(groupName: string): Promise<GroupTestResult> {
-    return this.post<GroupTestResult>(ENDPOINTS.policyGroupsTest, {
-      group_name: groupName,
-    });
+  async testPolicyGroup(groupName: string, signal?: AbortSignal): Promise<GroupTestResult> {
+    return this.post<GroupTestResult>(
+      ENDPOINTS.policyGroupsTest,
+      { group_name: groupName },
+      signal,
+    );
   }
 
   /** POST /v1/policies/test {policy_names, url} */
-  async testPolicies(policyNames: string[], url?: string): Promise<void> {
-    await this.post<void>(ENDPOINTS.policiesTest, {
-      policy_names: policyNames,
-      url: url ?? "http://www.gstatic.com/generate_204",
-    });
+  async testPolicies(policyNames: string[], url?: string, signal?: AbortSignal): Promise<void> {
+    await this.post<void>(
+      ENDPOINTS.policiesTest,
+      { policy_names: policyNames, url: url ?? "http://www.gstatic.com/generate_204" },
+      signal,
+    );
   }
 
   // ── Requests ──────────────────────────────────────────────────
   /** GET /v1/requests/recent -> { requests: [...] } */
-  async getRecentRequests(): Promise<RequestItem[]> {
-    const raw = await this.get<RecentRequests>(ENDPOINTS.requestsRecent);
-    return raw.requests ?? [];
+  async getRecentRequests(signal?: AbortSignal): Promise<RequestItem[]> {
+    const raw = await this.get<RecentRequests>(ENDPOINTS.requestsRecent, undefined, signal);
+    return parseOrThrow(z.array(requestItemSchema), raw.requests ?? [], ENDPOINTS.requestsRecent);
   }
 
   /** GET /v1/requests/active -> { requests: [...] } */
-  async getActiveRequests(): Promise<RequestItem[]> {
-    const raw = await this.get<RecentRequests>(ENDPOINTS.requestsActive);
-    return raw.requests ?? [];
+  async getActiveRequests(signal?: AbortSignal): Promise<RequestItem[]> {
+    const raw = await this.get<RecentRequests>(ENDPOINTS.requestsActive, undefined, signal);
+    return parseOrThrow(z.array(requestItemSchema), raw.requests ?? [], ENDPOINTS.requestsActive);
   }
 
   /** POST /v1/requests/kill {"id": N} */
-  async killRequest(id: number): Promise<void> {
-    await this.post<void>(ENDPOINTS.requestsKill, { id });
+  async killRequest(id: number, signal?: AbortSignal): Promise<void> {
+    await this.post<void>(ENDPOINTS.requestsKill, { id }, signal);
   }
 
   // ── Traffic ───────────────────────────────────────────────────
-  async getTraffic(): Promise<Traffic> {
-    return this.get<Traffic>(ENDPOINTS.traffic);
+  async getTraffic(signal?: AbortSignal): Promise<Traffic> {
+    return this.get<Traffic>(ENDPOINTS.traffic, undefined, signal);
   }
 
-  async getTrafficSummary(): Promise<TrafficSummary> {
-    return summarizeTraffic(await this.getTraffic());
+  async getTrafficSummary(signal?: AbortSignal): Promise<TrafficSummary> {
+    const summary = summarizeTraffic(await this.getTraffic(signal));
+    return parseOrThrow(trafficSummarySchema, summary, ENDPOINTS.traffic);
   }
 
   // ── Events & Rules ────────────────────────────────────────────
   /** GET /v1/events -> { events: [...] } */
-  async getEvents(): Promise<EventList> {
-    return this.get<EventList>(ENDPOINTS.events);
+  async getEvents(signal?: AbortSignal): Promise<EventList> {
+    const raw = await this.get<EventList>(ENDPOINTS.events, undefined, signal);
+    const events = parseOrThrow(
+      z.array(eventItemSchema),
+      raw.events ?? [],
+      ENDPOINTS.events,
+    );
+    return { events };
   }
 
   /** Convert raw event type (0/1/2) to a display level. */
@@ -270,80 +321,82 @@ export class SurgeClient {
     return "info";
   }
 
-  async getRules(): Promise<RuleInfo[]> {
-    const raw = await this.get<RuleInfo[]>(ENDPOINTS.rules);
+  async getRules(signal?: AbortSignal): Promise<RuleInfo[]> {
+    const raw = await this.get<RuleInfo[]>(ENDPOINTS.rules, undefined, signal);
     return Array.isArray(raw) ? raw : [];
   }
 
   // ── DNS ───────────────────────────────────────────────────────
   /** GET /v1/dns -> { local: [...], dnsCache: [...] } */
-  async getDnsCache(): Promise<DnsResult> {
-    return this.get<DnsResult>(ENDPOINTS.dns);
+  async getDnsCache(signal?: AbortSignal): Promise<DnsResult> {
+    return this.get<DnsResult>(ENDPOINTS.dns, undefined, signal);
   }
 
-  async getDnsCacheEntries(): Promise<DnsCacheEntry[]> {
-    const raw = await this.getDnsCache();
+  async getDnsCacheEntries(signal?: AbortSignal): Promise<DnsCacheEntry[]> {
+    const raw = await this.getDnsCache(signal);
     return raw.dnsCache ?? [];
   }
 
-  async flushDns(): Promise<void> {
-    await this.post<void>(ENDPOINTS.dnsFlush);
+  async flushDns(signal?: AbortSignal): Promise<void> {
+    await this.post<void>(ENDPOINTS.dnsFlush, undefined, signal);
   }
 
   /** POST /v1/test/dns_delay {"domain": "..."} */
-  async testDnsDelay(domain: string): Promise<unknown> {
-    return this.post(ENDPOINTS.dnsDelayTest, { domain });
+  async testDnsDelay(domain: string, signal?: AbortSignal): Promise<unknown> {
+    return this.post(ENDPOINTS.dnsDelayTest, { domain }, signal);
   }
 
   // ── Modules ───────────────────────────────────────────────────
   /** GET /v1/modules -> { enabled: [...], available: [...] } */
-  async getModules(): Promise<Modules> {
-    return this.get<Modules>(ENDPOINTS.modules);
+  async getModules(signal?: AbortSignal): Promise<Modules> {
+    return this.get<Modules>(ENDPOINTS.modules, undefined, signal);
   }
 
-  async getModuleList(): Promise<ModuleInfo[]> {
-    const raw = await this.getModules();
+  async getModuleList(signal?: AbortSignal): Promise<ModuleInfo[]> {
+    const raw = await this.getModules(signal);
     const enabled = new Set(raw.enabled ?? []);
     const all = new Set<string>([...(raw.enabled ?? []), ...(raw.available ?? [])]);
     return [...all].map((name) => ({ name, enabled: enabled.has(name) }));
   }
 
   /** POST /v1/modules { [name]: bool } */
-  async updateModule(name: string, enabled: boolean): Promise<void> {
-    await this.post<void>(ENDPOINTS.modules, { [name]: enabled });
+  async updateModule(name: string, enabled: boolean, signal?: AbortSignal): Promise<void> {
+    await this.post<void>(ENDPOINTS.modules, { [name]: enabled }, signal);
   }
 
   // ── Scripts ───────────────────────────────────────────────────
   /** GET /v1/scripting -> { scripts: [...] } */
-  async getScripts(): Promise<Scriptings> {
-    return this.get<Scriptings>(ENDPOINTS.scripting);
+  async getScripts(signal?: AbortSignal): Promise<Scriptings> {
+    return this.get<Scriptings>(ENDPOINTS.scripting, undefined, signal);
   }
 
-  async getScriptList() {
-    const raw = await this.getScripts();
+  async getScriptList(signal?: AbortSignal) {
+    const raw = await this.getScripts(signal);
     return raw.scripts ?? [];
   }
 
   /** POST /v1/scripting/evaluate */
-  async evaluateScript(scriptText: string, mockType = "cron", timeout = 5): Promise<unknown> {
-    return this.post(ENDPOINTS.scriptingEvaluate, {
-      script_text: scriptText,
-      mock_type: mockType,
-      timeout,
-    });
+  async evaluateScript(scriptText: string, mockType = "cron", timeout = 5, signal?: AbortSignal): Promise<unknown> {
+    return this.post(
+      ENDPOINTS.scriptingEvaluate,
+      { script_text: scriptText, mock_type: mockType, timeout },
+      signal,
+    );
   }
 
   /** POST /v1/scripting/cron/evaluate {"script_name": "..."} */
-  async runCronScript(scriptName: string): Promise<unknown> {
-    return this.post(ENDPOINTS.scriptingCronEvaluate, { script_name: scriptName });
+  async runCronScript(scriptName: string, signal?: AbortSignal): Promise<unknown> {
+    return this.post(ENDPOINTS.scriptingCronEvaluate, { script_name: scriptName }, signal);
   }
 
   // ── Profile ───────────────────────────────────────────────────
   /** GET /v1/profiles/current?sensitive=0 (mask passwords) */
-  async getCurrentProfile(sensitive = false): Promise<ProfileInfo | string> {
-    const raw = await this.get<ProfileInfo | string>(ENDPOINTS.profilesCurrent, {
-      sensitive: sensitive ? 1 : 0,
-    });
+  async getCurrentProfile(sensitive = false, signal?: AbortSignal): Promise<ProfileInfo | string> {
+    const raw = await this.get<ProfileInfo | string>(
+      ENDPOINTS.profilesCurrent,
+      { sensitive: sensitive ? 1 : 0 },
+      signal,
+    );
     return raw;
   }
 
@@ -353,13 +406,13 @@ export class SurgeClient {
     return profile.profile ?? profile.originalProfile ?? "";
   }
 
-  async reloadProfile(): Promise<void> {
-    await this.post<void>(ENDPOINTS.profilesReload);
+  async reloadProfile(signal?: AbortSignal): Promise<void> {
+    await this.post<void>(ENDPOINTS.profilesReload, undefined, signal);
   }
 
   // ── Metrics (V2, capability-gated) ────────────────────────────
-  async getMetrics(): Promise<string> {
-    return this.get<string>(ENDPOINTS.metrics);
+  async getMetrics(signal?: AbortSignal): Promise<string> {
+    return this.get<string>(ENDPOINTS.metrics, undefined, signal);
   }
 }
 

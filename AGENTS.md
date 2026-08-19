@@ -22,10 +22,9 @@
 | Table | TanStack Table |
 | Config Editor | CodeMirror 6 |
 | Icons | Lucide React |
-| Schema | Zod |
-| Date | date-fns |
+| Schema | Zod（API 响应 runtime 校验，见 `src/api/schemas.ts`） |
 | Test | Vitest |
-| E2E | Playwright |
+| E2E | Playwright（规划中，未启用） |
 
 ## 2. 架构
 

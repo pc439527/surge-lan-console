@@ -105,14 +105,22 @@ export function ConnectionsPage() {
   const handleTest = async (conn: SurgeConnection) => {
     setTestingId(conn.id);
     try {
-      // Prefer the provider client (active connection / demo mode), fall back to a
-      // freshly built one when testing a non-active connection.
-      const target = providerClient ?? buildClientFor(conn)?.client ?? null;
+      // 只对“当前活动连接”复用 provider client；测试其他连接必须用该连接
+      // 自己的配置构建 client，否则会拿 A 的 client 去测 B（Fix 01）。
+      const target =
+        conn.id === activeId
+          ? (providerClient ?? buildClientFor(conn)?.client ?? null)
+          : (buildClientFor(conn)?.client ?? null);
       if (target) {
         const result = await target.testConnection();
-        if (result.ok) {
-          toast.success(`已连接 · ${result.latencyMs ?? "?"}ms`);
+        if (result.reachable && result.authenticated) {
+          toast.success(`✓ Surge 可达 · ${result.latencyMs ?? "?"}ms`);
           setActive(conn.id);
+        } else if (result.reachable) {
+          // Device responded but rejected the API key.
+          toast.error(`⚠ Surge 可达 · API Key 无效（${result.latencyMs ?? "?"}ms）`);
+        } else {
+          toast.error("✕ 无法连接 Surge — " + (result.error?.message ?? "请检查地址与网络"));
         }
         return;
       }

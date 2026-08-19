@@ -32,7 +32,7 @@ import { useSurgeClientState } from "@/app/surge-client-context";
 import type { RequestItem } from "@/api/types";
 import { formatMsTimestamp } from "@/lib/format";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
-import { useRecentRequestsQuery } from "@/features/dashboard/dashboard-queries";
+import { useRecentRequestsQuery } from "@/features/shared/queries";
 
 function statusTone(status: string | undefined): "success" | "warning" | "danger" | "muted" {
   if (status === "Completed") return "success";
@@ -50,18 +50,32 @@ function statusLabel(status: string | undefined): string {
 
 export function RequestsPage() {
   const { client } = useSurgeClientState();
-  const requestsQuery = useRecentRequestsQuery();
+  const [paused, setPaused] = useState(false);
+  const requestsQuery = useRecentRequestsQuery({ paused });
   const [search, setSearch] = useState("");
   const [policyFilter, setPolicyFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<RequestItem | null>(null);
 
-  const frozen = useMemo(() => requestsQuery.data ?? [], [requestsQuery.data]);
+  // Fix 07: pause freezes a real snapshot — the live query data keeps
+  // updating underneath, but the table shows the captured list.
+  const [pausedSnapshot, setPausedSnapshot] = useState<RequestItem[] | null>(null);
   const data = useMemo<RequestItem[]>(
-    () => (paused ? frozen : (requestsQuery.data ?? [])),
-    [paused, frozen, requestsQuery.data],
+    () => pausedSnapshot ?? (requestsQuery.data ?? []),
+    [pausedSnapshot, requestsQuery.data],
   );
+
+  const togglePause = () => {
+    setPaused((prev) => {
+      const next = !prev;
+      if (next) {
+        setPausedSnapshot([...(requestsQuery.data ?? [])]);
+      } else {
+        setPausedSnapshot(null);
+      }
+      return next;
+    });
+  };
 
   const policies = useMemo(() => {
     const set = new Set<string>();
@@ -157,7 +171,7 @@ export function RequestsPage() {
           <h1 className="text-[26px] font-semibold text-text-primary">Requests</h1>
           <p className="mt-0.5 text-sm text-text-secondary">通过代理的最近连接</p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => setPaused((p) => !p)}>
+        <Button variant="secondary" size="sm" onClick={togglePause}>
           {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
           {paused ? "继续" : "Pause"}
         </Button>

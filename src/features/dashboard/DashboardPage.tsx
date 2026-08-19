@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Activity, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -16,16 +16,17 @@ import {
   useRecentRequestsQuery,
   useTrafficQuery,
 } from "./dashboard-queries";
+import { useGroupSelectionsQuery } from "@/features/policies/policies-queries";
 import { OutboundModeControl } from "./OutboundModeControl";
 import type { DisplayEvent } from "./dashboard-queries";
 
-function statusColor(code: string | undefined): "success" | "warning" | "danger" | "muted" {
+function statusColor(code: string | null | undefined): "success" | "warning" | "danger" | "muted" {
   if (code === "Completed") return "success";
   if (code === "Active") return "warning";
   return "muted";
 }
 
-function statusText(code: string | undefined): string {
+function statusText(code: string | null | undefined): string {
   if (code === "Completed") return "已完成";
   if (code === "Active") return "活动中";
   return code ?? "—";
@@ -37,27 +38,34 @@ function eventVariant(level: string): "default" | "warning" | "danger" {
   return "default";
 }
 
+const TRAIL_MAX = 300; // 5 分钟 · 1 秒采样
+
 export function DashboardPage() {
-  const { client, missingKey } = useSurgeClientState();
+  const { client, missingKey, connectionId } = useSurgeClientState();
   const traffic = useTrafficQuery();
   const active = useActiveRequestsQuery();
   const recent = useRecentRequestsQuery();
   const events = useEventsQuery();
   const groups = usePolicyGroupsQuery();
+  const groupNames = groups.data?.map((g) => g.name) ?? [];
+  const selections = useGroupSelectionsQuery(groupNames);
 
-  // Rolling window for the chart — reuse cached snapshots across re-renders
+  // Rolling window for the chart (Fix 06): effects only, no setState in useMemo.
   const [trail, setTrail] = useState<{ time: number; upload: number; download: number }[]>([]);
   const latestTraffic = traffic.data;
-  useMemo(() => {
+
+  // Switching Surge instances must never mix charts (Fix 05).
+  useEffect(() => {
+    setTrail([]);
+  }, [connectionId]);
+
+  useEffect(() => {
     if (!latestTraffic) return;
-    setTrail((prev) => {
-      const next = [
-        ...prev,
-        { time: Date.now(), upload: latestTraffic.uploadRate, download: latestTraffic.downloadRate },
-      ].slice(-120);
-      return next;
-    });
-  }, [latestTraffic]);
+    setTrail((prev) => [
+      ...prev,
+      { time: Date.now(), upload: latestTraffic.uploadRate, download: latestTraffic.downloadRate },
+    ].slice(-TRAIL_MAX));
+  }, [latestTraffic, connectionId]);
 
   if (!client) {
     return (
@@ -131,7 +139,7 @@ export function DashboardPage() {
               groups.data?.map((g) => (
                 <div key={g.name} className="flex items-center justify-between rounded-sm border border-border bg-elevated/50 px-3 py-2.5">
                   <span className="text-sm text-text-primary">{g.name}</span>
-                  <Badge>{g.policies[0] ?? "—"}</Badge>
+                  <Badge>{selections.data?.[g.name] ?? "—"}</Badge>
                 </div>
               ))
             )}

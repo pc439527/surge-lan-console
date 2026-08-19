@@ -19,7 +19,9 @@ function renderWithClient(ui: React.ReactNode, client: SurgeClient | null = null
   });
   return render(
     <QueryClientProvider client={qc}>
-      <SurgeClientContext.Provider value={{ client, missingKey: false }}>
+      <SurgeClientContext.Provider
+        value={{ client, missingKey: false, connectionId: null, connection: null, demoMode: false }}
+      >
         {ui}
       </SurgeClientContext.Provider>
     </QueryClientProvider>,

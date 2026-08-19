@@ -11,11 +11,27 @@ export function SurgeClientProvider({ children }: PropsWithChildren) {
   const demoMode = usePreferencesStore((s) => s.demoMode);
 
   const value = useMemo<SurgeClientContextValue>(() => {
-    if (demoMode) return { client: new MockSurgeClient() as unknown as SurgeClient, missingKey: false };
+    if (demoMode) {
+      return {
+        connectionId: null,
+        connection: null,
+        client: new MockSurgeClient() as unknown as SurgeClient,
+        missingKey: false,
+        demoMode: true,
+      };
+    }
     const conn = connections.find((c) => c.id === activeId);
-    if (!conn) return { client: null, missingKey: false };
+    if (!conn) {
+      return { connectionId: null, connection: null, client: null, missingKey: false, demoMode: false };
+    }
     const built = buildClientFor(conn);
-    return built ? { client: built.client, missingKey: false } : { client: null, missingKey: true };
+    return {
+      connectionId: conn.id,
+      connection: conn,
+      client: built ? built.client : null,
+      missingKey: !built,
+      demoMode: false,
+    };
   }, [connections, activeId, demoMode]);
 
   return <SurgeClientContext.Provider value={value}>{children}</SurgeClientContext.Provider>;

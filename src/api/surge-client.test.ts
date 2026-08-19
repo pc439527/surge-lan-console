@@ -64,17 +64,29 @@ describe("SurgeClient", () => {
     await expect(client.getOutboundMode()).rejects.toMatchObject({ kind: "unsupported" });
   });
 
-  it("testConnection reports latency on success", async () => {
+  it("testConnection reports reachable+authenticated on success", async () => {
     mock.onGet("/v1/outbound").reply(200, { policy: "rule" });
     const result = await client.testConnection();
-    expect(result.ok).toBe(true);
+    expect(result.reachable).toBe(true);
+    expect(result.authenticated).toBe(true);
     expect(typeof result.latencyMs).toBe("number");
   });
 
-  it("testConnection treats auth rejection as reachable", async () => {
+  it("testConnection distinguishes reachable-but-unauthenticated", async () => {
     mock.onGet("/v1/outbound").reply(401, {});
     const result = await client.testConnection();
-    expect(result.ok).toBe(true);
+    expect(result.reachable).toBe(true);
+    expect(result.authenticated).toBe(false);
+    expect(result.error?.kind).toBe("authentication");
+  });
+
+  it("testConnection reports unreachable on network failure", async () => {
+    mock.onGet("/v1/outbound").networkError();
+    const result = await client.testConnection();
+    expect(result.reachable).toBe(false);
+    expect(result.authenticated).toBe(false);
+    expect(result.latencyMs).toBeNull();
+    expect(result.error?.kind).toBe("connection");
   });
 
   it("fetching policy groups", async () => {

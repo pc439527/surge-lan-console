@@ -18,8 +18,10 @@ import type {
 } from "@/api/types";
 
 export interface TestConnectionResult {
-  ok: boolean;
+  reachable: boolean;
+  authenticated: boolean;
   latencyMs: number | null;
+  error?: unknown;
 }
 
 let tick = 0;
@@ -69,7 +71,7 @@ export class MockSurgeClient {
   private enabledModules = ["Advertising Block", "Quic Fix"];
 
   async testConnection(): Promise<TestConnectionResult> {
-    return { ok: true, latencyMs: 18 };
+    return { reachable: true, authenticated: true, latencyMs: 18 };
   }
 
   async getFeatures(): Promise<FeatureState> {
