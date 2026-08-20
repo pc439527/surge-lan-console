@@ -7,11 +7,11 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_VERSION: 0.2.1
-        GIT_COMMIT: 4541a5e
+        APP_VERSION: 0.2.2
+        GIT_COMMIT: 9804fb5
         GIT_BRANCH: main
-        BUILD_TIME: 2026-08-20T01:13:46+00:00
-    image: surge-lan-console:0.2.1
+        BUILD_TIME: 2026-08-20T01:52:00+00:00
+    image: surge-lan-console:0.2.2
     container_name: surge-console
     ports:
       - "8080:80"

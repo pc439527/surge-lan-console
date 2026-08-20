@@ -51,6 +51,16 @@ docker run -d --name surge-console -p 8080:80 surge-lan-console:0.1.0
 
 > 连接 Apple TV / iPhone 时若遇到 CORS 拦截，确认 Surge 的 HTTP API 已启用且设备与浏览器同网段；必要时可在宿主机 Nginx 上加一层 `/v1/` 反向代理。
 
+### HTTPS 访问（v0.2.2 反向代理模式）
+
+控制台若通过 HTTPS（如 Tailscale 域名）打开，而 Surge API 是纯 HTTP，浏览器会拦截混合内容请求，连接测试将永远失败——**设备本身是好的**。解决方式：
+
+1. 在连接表单中勾选 **「通过控制台反向代理访问」**；
+2. 浏览器将请求发往控制台同源 `/v1/`，由 `nginx.conf` 中的 `location /v1/` 转发到 Surge 设备；
+3. 代理目标地址在 `nginx.conf` 中配置（默认 `192.168.50.10:6171`），如设备变化请同步修改并重新部署。
+
+局域网内直接使用 `http://<host>:8080` 访问时无需开启。
+
 ## 技术栈
 
 | 项目 | 技术 |
