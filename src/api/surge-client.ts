@@ -7,6 +7,7 @@ import { ENDPOINTS } from "./endpoints";
 import { SurgeError } from "./errors";
 import { z } from "zod";
 import { eventItemSchema, parseOrThrow, requestItemSchema, trafficSummarySchema } from "./schemas";
+import { normalizeRules } from "./normalize/rules";
 import type {
   DnsCacheEntry,
   DnsResult,
@@ -19,6 +20,7 @@ import type {
   Modules,
   OutboundMode,
   Policies,
+  PolicyGroupTestResults,
   PolicyGroups,
   ProfileInfo,
   RecentRequests,
@@ -100,7 +102,7 @@ export function summarizeTraffic(traffic: Traffic): TrafficSummary {
     totalUpload += conn.out ?? 0;
     totalDownload += conn.in ?? 0;
   }
-  return { uploadRate, downloadRate, totalUpload, totalDownload };
+  return { uploadRate, downloadRate, totalUpload, totalDownload, startTime: traffic.startTime };
 }
 
 /**
@@ -274,6 +276,16 @@ export class SurgeClient {
     );
   }
 
+  /** GET /v1/policy_groups/test_results -> per-policy latency after the last test. */
+  async getPolicyTestResults(signal?: AbortSignal): Promise<PolicyGroupTestResults> {
+    const raw = await this.get<PolicyGroupTestResults>(
+      ENDPOINTS.policyGroupsTestResults,
+      undefined,
+      signal,
+    );
+    return raw ?? {};
+  }
+
   // ── Requests ──────────────────────────────────────────────────
   /** GET /v1/requests/recent -> { requests: [...] } */
   async getRecentRequests(signal?: AbortSignal): Promise<RequestItem[]> {
@@ -322,8 +334,9 @@ export class SurgeClient {
   }
 
   async getRules(signal?: AbortSignal): Promise<RuleInfo[]> {
-    const raw = await this.get<RuleInfo[]>(ENDPOINTS.rules, undefined, signal);
-    return Array.isArray(raw) ? raw : [];
+    const raw = await this.get<unknown>(ENDPOINTS.rules, undefined, signal);
+    // Task 05: unknown shape must THROW (→ "parse error" state), never [].
+    return normalizeRules(raw);
   }
 
   // ── DNS ───────────────────────────────────────────────────────
@@ -413,6 +426,29 @@ export class SurgeClient {
   // ── Metrics (V2, capability-gated) ────────────────────────────
   async getMetrics(signal?: AbortSignal): Promise<string> {
     return this.get<string>(ENDPOINTS.metrics, undefined, signal);
+  }
+
+  /**
+   * Raw endpoint probe for API Diagnostics (OPTIMIZATION_PLAN Task 04).
+   * Captures HTTP status, latency and the raw response so the UI can show
+   * whether an endpoint is reachable, unsupported or mis-parsed — without
+   * the page-level query layers interfering.
+   */
+  async probeEndpoint(
+    endpoint: string,
+    signal?: AbortSignal,
+  ): Promise<{ status: number | null; latencyMs: number | null; raw: unknown; error?: SurgeError }> {
+    const started = performance.now();
+    try {
+      const raw = await this.get<unknown>(endpoint, undefined, signal);
+      return { status: 200, latencyMs: Math.round(performance.now() - started), raw };
+    } catch (error) {
+      const latency = Math.round(performance.now() - started);
+      if (error instanceof SurgeError) {
+        return { status: error.status ?? null, latencyMs: latency, raw: null, error };
+      }
+      return { status: null, latencyMs: latency, raw: null, error: classifyError(error) };
+    }
   }
 }
 

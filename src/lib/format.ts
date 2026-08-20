@@ -15,9 +15,21 @@ export function formatRate(bytesPerSecond: number): string {
 }
 
 export function formatDuration(ms: number | undefined): string {
-  if (ms === undefined) return "—";
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return "—";
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
+}
+
+/** Human uptime: "3h 12m" / "5m 20s" / "42s"; invalid input → "—". */
+export function formatUptime(ms: number | undefined): string {
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return "—";
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 export function formatTime(iso: string): string {

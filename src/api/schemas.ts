@@ -15,6 +15,7 @@ export const trafficSummarySchema = z.object({
   downloadRate: z.number(),
   totalUpload: z.number(),
   totalDownload: z.number(),
+  startTime: z.number().optional(),
 });
 
 export const requestItemSchema = z.object({

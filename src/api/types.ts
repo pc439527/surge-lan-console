@@ -49,6 +49,8 @@ export interface TrafficSummary {
   downloadRate: number;
   totalUpload: number;
   totalDownload: number;
+  /** Session start (epoch ms or s, raw from API — normalize before comparing). */
+  startTime?: number;
 }
 
 /**
@@ -80,6 +82,18 @@ export interface GroupSelection {
 export interface GroupTestResult {
   available: string[];
 }
+
+/**
+ * GET /v1/policy_groups/test_results ->
+ * { [groupName]: { [policyName]: { ok, latency } } }
+ * Latency may be a number (ms) or a "Timeout"-like string on older Surge builds.
+ */
+export interface PolicyTestEntry {
+  ok?: boolean;
+  latency?: number | string | null;
+}
+
+export type PolicyGroupTestResults = Record<string, Record<string, PolicyTestEntry>>;
 
 /**
  * GET /v1/requests/recent | /v1/requests/active -> { requests: RequestItem[] }
@@ -146,20 +160,24 @@ export interface DnsResult {
 }
 
 export interface DnsLocalEntry {
-  data: string;
+  data: string | null;
   comment: string | null;
   domain: string | null;
   source: string | null;
   server: string | null;
+  /** Original API record — keeps platform-specific fields from being lost. */
+  raw?: unknown;
 }
 
 export interface DnsCacheEntry {
-  timeCost: number;
-  path: string;
+  timeCost?: number;
+  path?: string;
   data: string[];
   domain: string;
-  server: string;
-  expiresTime: number;
+  server?: string;
+  expiresTime?: number;
+  /** Original API record — keeps platform-specific fields from being lost. */
+  raw?: unknown;
 }
 
 /** GET /v1/modules -> { enabled: string[], available: string[] } */
@@ -184,11 +202,13 @@ export interface ScriptItem {
   path: string;
 }
 
-/** GET /v1/rules -> RuleInfo[] */
+/** GET /v1/rules -> RuleInfo[] (normalized; extra fields kept as raw) */
 export interface RuleInfo {
-  type: string;
-  content: string;
-  policy: string;
+  type?: string;
+  content?: string;
+  policy?: string;
+  /** Original API record — survives field drift across Surge builds. */
+  raw?: unknown;
 }
 
 /**

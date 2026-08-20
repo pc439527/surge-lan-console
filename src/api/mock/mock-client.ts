@@ -8,6 +8,7 @@ import type {
   Modules,
   OutboundMode,
   Policies,
+  PolicyGroupTestResults,
   PolicyGroups,
   ProfileInfo,
   RequestItem,
@@ -126,6 +127,31 @@ export class MockSurgeClient {
 
   async testPolicies(): Promise<void> {
     /* no-op */
+  }
+
+  async getPolicyTestResults(): Promise<PolicyGroupTestResults> {
+    const latencies: Record<string, number> = {
+      "HK 01": 42,
+      "HK 02": 61,
+      "JP Tokyo": 72,
+      "SG": 95,
+      "US LA": 168,
+      "HK 05": 420,
+      "DIRECT": 0,
+    };
+    return Object.fromEntries(
+      Object.entries(POLICY_GROUPS_DATA).map(([group, policies]) => [
+        group,
+        Object.fromEntries(
+          policies.map((p) => [
+            p.name,
+            latencies[p.name] != null
+              ? { ok: true, latency: latencies[p.name] }
+              : { ok: false, latency: "Timeout" },
+          ]),
+        ),
+      ]),
+    );
   }
 
   async getRecentRequests(): Promise<RequestItem[]> {

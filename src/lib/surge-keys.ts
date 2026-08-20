@@ -20,6 +20,8 @@ export const surgeKeys = {
     [...surgeKeys.root(connectionId), "outbound"] as const,
   policyGroups: (connectionId: string | null) =>
     [...surgeKeys.root(connectionId), "policy-groups"] as const,
+  policyTestResults: (connectionId: string | null) =>
+    [...surgeKeys.root(connectionId), "policy-test-results"] as const,
   policySelections: (connectionId: string | null, groupNames: string[]) =>
     [...surgeKeys.root(connectionId), "policy-selections", groupNames] as const,
   features: (connectionId: string | null) =>
