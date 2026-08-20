@@ -7,6 +7,7 @@ import {
   Globe,
   ListOrdered,
   Network,
+  Radar,
   Plug,
   ScrollText,
   Settings,
@@ -42,6 +43,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "网络",
     items: [
       { to: "/policies", label: "策略", icon: GitBranch, feature: "policies" },
+      { to: "/node-quality", label: "节点质量", icon: Radar, feature: "policies" },
       { to: "/requests", label: "请求", icon: ListOrdered, feature: "requests" },
       { to: "/traffic", label: "流量", icon: Activity, feature: "traffic" },
       { to: "/dns", label: "DNS", icon: Globe, feature: "dns" },

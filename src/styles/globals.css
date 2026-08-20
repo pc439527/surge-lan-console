@@ -8,6 +8,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-surface-primary: var(--surface-primary);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-border-subtle: var(--border-subtle);
   --color-elevated: var(--elevated);
   --color-glass: var(--glass);
   --color-border: var(--border);

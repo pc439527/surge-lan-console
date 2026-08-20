@@ -3,6 +3,10 @@
 :root {
   --background: #f4f7fc;
   --surface: rgba(255, 255, 255, 0.78);
+  --surface-primary: #ffffff;
+  --surface-secondary: rgba(255, 255, 255, 0.78);
+  --surface-tertiary: rgba(242, 246, 252, 0.92);
+  --border-subtle: rgba(15, 23, 42, 0.07);
   --elevated: #ffffff;
   --glass: rgba(255, 255, 255, 0.48);
   --glass-border: rgba(255, 255, 255, 0.52);
@@ -24,6 +28,10 @@
 .dark {
   --background: #070a0f;
   --surface: rgba(18, 22, 30, 0.82);
+  --surface-primary: #10141c;
+  --surface-secondary: rgba(18, 22, 30, 0.82);
+  --surface-tertiary: rgba(25, 31, 42, 0.92);
+  --border-subtle: rgba(255, 255, 255, 0.07);
   --elevated: #151a24;
   --glass: rgba(20, 24, 32, 0.58);
   --glass-border: rgba(255, 255, 255, 0.1);

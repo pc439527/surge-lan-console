@@ -15,6 +15,9 @@ const FleetPage = lazy(() =>
 const PoliciesPage = lazy(() =>
   import("@/features/policies/PoliciesPage").then((m) => ({ default: m.PoliciesPage })),
 );
+const NodeQualityPage = lazy(() =>
+  import("@/features/node-quality/NodeQualityPage").then((m) => ({ default: m.NodeQualityPage })),
+);
 const RequestsPage = lazy(() =>
   import("@/features/requests/RequestsPage").then((m) => ({ default: m.RequestsPage })),
 );
@@ -58,6 +61,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: page(<DashboardPage />) },
       { path: "policies", element: page(<PoliciesPage />) },
+      { path: "node-quality", element: page(<NodeQualityPage />) },
       { path: "requests", element: page(<RequestsPage />) },
       { path: "traffic", element: page(<TrafficPage />) },
       { path: "dns", element: page(<DnsPage />) },

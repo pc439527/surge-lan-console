@@ -75,13 +75,13 @@ export function ModulesPage() {
         <p className="mt-0.5 text-sm text-text-secondary">已安装与可用模块</p>
       </header>
 
-      {capUnsupported && modulesQuery.isError && <CapabilityNotice feature="modules" api="/v1/modules" />}
-      <div className="relative max-w-sm">
+      {capUnsupported && <CapabilityNotice feature="modules" api="/v1/modules" />}
+      {!capUnsupported && <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
         <Input ref={searchRef} className="pl-9" placeholder="搜索模块..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
+      </div>}
 
-      <Card>
+      {!capUnsupported && <Card>
         <CardContent className="p-2">
           {modulesQuery.isLoading ? (
             <div className="space-y-2 p-3">
@@ -113,7 +113,7 @@ export function ModulesPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Dialog open={pendingToggle !== null} onOpenChange={(open) => !open && setPendingToggle(null)}>
         <DialogContent>

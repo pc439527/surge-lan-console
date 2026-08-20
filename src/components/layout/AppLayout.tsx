@@ -12,7 +12,7 @@ import { TopBar } from "./TopBar";
  *   - every other business page is capped at 1760px
  * Width is decided here once — pages never set their own container width.
  */
-const WIDE_PATHS = ["/", "/configuration"];
+const WIDE_PATHS = ["/", "/configuration", "/node-quality"];
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);

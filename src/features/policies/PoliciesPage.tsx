@@ -7,8 +7,9 @@ import { Drawer, DrawerBody, DrawerContent, DrawerDescription, DrawerHeader, Dra
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
-import { policyLatencyMs, policyLatencyView } from "@/lib/request";
+import { policyLatencyMs } from "@/lib/request";
 import { latencyTone } from "@/lib/latency";
+import { NodeLatencyBadge } from "@/features/node-quality/NodeLatencyBadge";
 import { cn } from "@/lib/cn";
 import {
   useGroupSelectionsQuery,
@@ -232,7 +233,6 @@ export function PoliciesPage() {
               <DrawerBody className="scrollbar-thin p-3">
                 {drawer.policies.map((policyName) => {
                   const isSelected = selections.data?.[drawer.name] === policyName;
-                  const latency = policyLatencyView(testResults.data?.[drawer.name]?.[policyName]);
                   const type = drawer.types[policyName];
                   return (
                     <button
@@ -251,9 +251,7 @@ export function PoliciesPage() {
                       <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{policyName}</span>
                       {type && <span className="shrink-0 font-mono text-[10px] text-text-tertiary">{type}</span>}
                       {testedGroups.has(drawer.name) && (
-                        <Badge variant={latency.tone} className="shrink-0 font-mono tabular-nums">
-                          {latency.label}
-                        </Badge>
+                        <NodeLatencyBadge latency={policyLatencyMs(testResults.data?.[drawer.name]?.[policyName])} reachable={testResults.data?.[drawer.name]?.[policyName]?.ok === true} testedAt={Date.now()} />
                       )}
                     </button>
                   );

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Activity, ArrowRight, Globe, ShieldCheck } from "lucide-react";
+import { Activity, ArrowRight, CheckCircle2, Globe, Radar, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -159,6 +159,13 @@ export function DashboardPage() {
     ? Date.now() - (normalizeEpoch(traffic.data.startTime) ?? Date.now())
     : undefined;
   const apiHealthy = traffic.isSuccess || groups.isSuccess;
+  const healthItems = [
+    { label: "API", healthy: apiHealthy },
+    { label: "DNS", healthy: dnsQuery.isSuccess },
+    { label: "Proxy", healthy: outboundModeQuery.isSuccess },
+    { label: "Nodes", healthy: groups.isSuccess && (groups.data?.length ?? 0) > 0 },
+  ];
+  const healthyCount = healthItems.filter((item) => item.healthy).length;
 
   return (
     <div className="space-y-6">
@@ -207,6 +214,16 @@ export function DashboardPage() {
         </div>
       </Card>
 
+      <Card className="border-success/20 bg-surface-primary p-5">
+        <div className="flex flex-wrap items-center gap-5">
+          <div className="flex min-w-[220px] flex-1 items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-pill bg-success/12 text-success"><CheckCircle2 className="h-5 w-5" /></span>
+            <div><p className="text-xs font-medium uppercase tracking-wider text-text-tertiary">Surge Health</p><p className="text-lg font-semibold text-text-primary">{healthyCount === healthItems.length ? "运行正常" : healthyCount >= 2 ? "部分服务异常" : "需要检查"}</p></div>
+          </div>
+          <div className="flex flex-wrap gap-2">{healthItems.map((item) => <Badge key={item.label} variant={item.healthy ? "success" : "danger"}>{item.label} · {item.healthy ? "OK" : "异常"}</Badge>)}</div>
+        </div>
+      </Card>
+
       <MetricCards
         data={{
           uploadRate: traffic.data?.uploadRate ?? 0,
@@ -216,6 +233,10 @@ export function DashboardPage() {
           loading,
         }}
       />
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between"><div><CardTitle>节点质量</CardTitle><p className="mt-1 text-xs text-text-tertiary">查看节点排名、延迟和可用性</p></div><Button variant="secondary" size="sm" asChild><Link to="/node-quality"><Radar className="h-3.5 w-3.5" />打开节点中心</Link></Button></CardHeader>
+      </Card>
 
       {/* Row 1 — Traffic + Surge Status（12 列网格：图 8 / 状态 4） */}
       <div className="dashboard-primary-grid grid grid-cols-1 items-start gap-3 sm:gap-4 xl:grid-cols-12">
