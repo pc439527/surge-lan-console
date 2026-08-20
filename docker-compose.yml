@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
       args:
         APP_VERSION: 0.3.0
-        GIT_COMMIT: 6b33e7a
+        GIT_COMMIT: 49273c2
         GIT_BRANCH: main
         BUILD_TIME: 2026-08-20T02:28:03+00:00
     image: surge-lan-console:0.3.0
