@@ -10,6 +10,7 @@ import {
   ScrollText,
   Settings,
   Shield,
+  Stethoscope,
   Wifi,
   type LucideIcon,
 } from "lucide-react";
@@ -54,6 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/connections", label: "连接", icon: Wifi },
       { to: "/settings", label: "设置", icon: Settings },
+      { to: "/settings/diagnostics", label: "API 诊断", icon: Stethoscope },
     ],
   },
 ];

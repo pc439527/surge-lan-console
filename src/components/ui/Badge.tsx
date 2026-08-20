@@ -12,6 +12,8 @@ const badgeVariants = cva(
         warning: "bg-warning/15 text-warning",
         danger: "bg-danger/12 text-danger",
         muted: "bg-surface text-text-tertiary border border-border",
+        info: "bg-accent/10 text-accent border border-accent/20",
+        purple: "bg-chart-download/10 text-chart-download border border-chart-download/20",
       },
     },
     defaultVariants: { variant: "default" },

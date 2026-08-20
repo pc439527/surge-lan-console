@@ -3,6 +3,7 @@ import { PanelLeft, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { useConnectionStore } from "@/stores/connection-store";
+import { compactBuildLabel } from "@/lib/version";
 import { NAV_SECTIONS } from "./nav";
 
 interface SidebarProps {
@@ -92,6 +93,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           !collapsed && (
             <p className="px-2.5 text-[11px] text-text-tertiary">未连接</p>
           )
+        )}
+        {!collapsed && (
+          <div className="mt-2 px-2.5">
+            <p className="truncate font-mono text-[10px] text-text-tertiary">{compactBuildLabel()}</p>
+          </div>
         )}
         {!collapsed && (
           <Button variant="ghost" size="sm" className="mt-1 w-full justify-start gap-2 text-text-secondary" onClick={onToggle}>

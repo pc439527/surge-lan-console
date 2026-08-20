@@ -6,7 +6,8 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Mobile navigation"
-      className="glass fixed inset-x-0 bottom-0 z-40 flex h-14 items-stretch justify-around border-t border-border/40 lg:hidden"
+      className="glass fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-border/40 lg:hidden"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {MOBILE_NAV.map((item) => (
         <NavLink

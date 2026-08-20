@@ -51,6 +51,12 @@
       background-color var(--duration-page) var(--ease-apple),
       color var(--duration-page) var(--ease-apple);
   }
+
+  /* iOS safe-area insets (OPTIMIZATION_PLAN §53) — PWA + landscape */
+  main {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
   code,
   pre {
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;

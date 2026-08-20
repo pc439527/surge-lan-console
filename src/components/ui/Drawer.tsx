@@ -24,7 +24,7 @@ DrawerOverlay.displayName = "DrawerOverlay";
 
 export const DrawerContent = forwardRef<
   ElementRef<typeof DialogPrimitive.Content>,
-  ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: "right" | "bottom" }
+  ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: "right" | "bottom" | "left" }
 >(({ className, children, side = "right", ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DrawerOverlay />
@@ -34,6 +34,8 @@ export const DrawerContent = forwardRef<
         "glass fixed z-50 flex flex-col",
         side === "right" &&
           "inset-y-0 right-0 w-[min(94vw,440px)] rounded-l-xl data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right",
+        side === "left" &&
+          "inset-y-0 left-0 w-[min(85vw,320px)] rounded-r-xl data-[state=open]:animate-in data-[state=open]:slide-in-from-left data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left",
         side === "bottom" &&
           "inset-x-0 bottom-0 max-h-[85vh] rounded-t-xl data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom",
         className,

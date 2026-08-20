@@ -19,7 +19,8 @@ describe("AppLayout", () => {
 
   it("renders sidebar navigation groups", () => {
     renderLayout();
-    expect(screen.getByText("Surge LAN Console")).toBeInTheDocument();
+    // Brand appears in the desktop sidebar and the mobile top bar.
+    expect(screen.getAllByText("Surge LAN Console").length).toBeGreaterThan(0);
     // Items appear in both sidebar and mobile nav
     expect(screen.getAllByText("仪表盘").length).toBeGreaterThan(0);
     expect(screen.getAllByText("策略").length).toBeGreaterThan(0);
