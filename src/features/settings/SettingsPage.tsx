@@ -1,24 +1,30 @@
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
+import { Stethoscope } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Switch } from "@/components/ui/Switch";
 import { AppearanceSwitcher } from "@/components/ui/AppearanceSwitcher";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
-import { ENDPOINTS } from "@/api/endpoints";
+import { surgeKeys } from "@/lib/surge-keys";
 import type { FeatureState } from "@/api/types";
 import { usePreferencesStore } from "@/stores/preferences-store";
+import { BUILD_INFO, formatBuildTime } from "@/lib/version";
 
 export function SettingsPage() {
   const demoMode = usePreferencesStore((s) => s.demoMode);
+  const { connectionId, connection } = useSurgeClientState();
+  const connectionName = connection ? `${connection.name} · ${connection.host}:${connection.port}` : "无活动连接";
   const setDemoMode = usePreferencesStore((s) => s.setDemoMode);
   const { client } = useSurgeClientState();
   const surgeClient = useSurgeClient();
   const queryClient = useQueryClient();
 
   const featuresQuery = useQuery({
-    queryKey: [ENDPOINTS.featuresMitm],
+    queryKey: surgeKeys.features(connectionId),
     queryFn: () => surgeClient!.getFeatures(),
     enabled: !!surgeClient,
     refetchInterval: 10_000,
@@ -28,7 +34,7 @@ export function SettingsPage() {
     mutationFn: ({ feature, enabled }: { feature: keyof FeatureState; enabled: boolean }) =>
       surgeClient!.setFeature(feature, enabled),
     onSuccess: (_d, { feature, enabled }) => {
-      queryClient.setQueryData([ENDPOINTS.featuresMitm], (prev: Record<string, boolean> | undefined) => ({
+      queryClient.setQueryData(surgeKeys.features(connectionId), (prev: Record<string, boolean> | undefined) => ({
         ...prev,
         [feature]: enabled,
       }));
@@ -79,6 +85,26 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>连接</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            {connectionName}
+          </p>
+          <Button variant="secondary" size="sm" asChild>
+            <Link to="/settings/diagnostics">
+              <Stethoscope className="h-4 w-4" />
+              打开 API Diagnostics
+            </Link>
+          </Button>
+          <p className="text-xs text-text-tertiary">
+            探测每个 Surge 端点的 HTTP 状态、延迟与解析结果，用于区分「空数据」「平台不支持」与「解析失败」。
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>功能</CardTitle>
         </CardHeader>
         <CardContent>
@@ -111,15 +137,32 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>关于</CardTitle>
+          <CardTitle>系统 · 关于</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-text-secondary">
-          <p>Surge LAN Console 0.1.0</p>
-          <p className="mt-1 text-xs text-text-tertiary">
+        <CardContent className="space-y-2">
+          <BuildInfoRow label="Version" value={`v${BUILD_INFO.version}`} mono />
+          <BuildInfoRow label="Git Commit" value={BUILD_INFO.commit} mono />
+          {BUILD_INFO.branch && BUILD_INFO.branch !== "unknown" && (
+            <BuildInfoRow label="Branch" value={BUILD_INFO.branch} mono />
+          )}
+          <BuildInfoRow label="Build" value={formatBuildTime(BUILD_INFO.buildTime)} />
+          <BuildInfoRow label="Environment" value={BUILD_INFO.environment} />
+          <p className="pt-1 text-xs text-text-tertiary">
             受 Apple iOS 26 / Liquid Glass 启发 · Surge HTTP API 客户端
           </p>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function BuildInfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="shrink-0 text-[13px] text-text-secondary">{label}</span>
+      <span className={`min-w-0 truncate text-right text-[13px] text-text-primary ${mono ? "font-mono text-xs" : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }

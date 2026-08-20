@@ -37,6 +37,9 @@ const EventsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const DiagnosticsPage = lazy(() =>
+  import("@/features/settings/DiagnosticsPage").then((m) => ({ default: m.DiagnosticsPage })),
+);
 const DesignSystemPage = lazy(() =>
   import("@/features/design-system/DesignSystemPage").then((m) => ({ default: m.DesignSystemPage })),
 );
@@ -62,6 +65,7 @@ export const router = createBrowserRouter([
       { path: "events", element: page(<EventsPage />) },
       { path: "connections", element: page(<ConnectionsPage />) },
       { path: "settings", element: page(<SettingsPage />) },
+      { path: "settings/diagnostics", element: page(<DiagnosticsPage />) },
       { path: "design-system", element: page(<DesignSystemPage />) },
     ],
   },

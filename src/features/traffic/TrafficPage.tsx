@@ -6,6 +6,7 @@ import { TrafficChart } from "@/features/traffic/TrafficChart";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { useTrafficQuery } from "@/features/shared/queries";
+import { usePageVisible } from "@/hooks/use-page-visibility";
 import { formatBytes } from "@/lib/format";
 
 type Range = "1m" | "5m" | "15m" | "30m";
@@ -17,7 +18,10 @@ const RANGES: { value: Range; label: string }[] = [
   { value: "30m", label: "30 分钟" },
 ];
 
-const WINDOW_SECONDS: Record<Range, number> = { "1m": 60, "5m": 300, "15m": 900, "30m": 1800 };
+const WINDOW_MS: Record<Range, number> = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000 };
+
+/** Task 09: always keep the last 30 minutes (1s sampling), UI filters on top. */
+const MAX_POINTS = 1800;
 
 interface TrafficSample {
   time: number;
@@ -30,6 +34,7 @@ interface TrafficSample {
 export function TrafficPage() {
   const { client, connectionId } = useSurgeClientState();
   const traffic = useTrafficQuery();
+  const visible = usePageVisible();
   const [range, setRange] = useState<Range>("5m");
   const [samples, setSamples] = useState<TrafficSample[]>([]);
 
@@ -38,11 +43,11 @@ export function TrafficPage() {
     setSamples([]);
   }, [connectionId]);
 
-  // 1s sampling with a rolling window of the selected range.
-  // Keeps cumulative bytes per sample so window totals use deltas (Fix 09).
+  // Ring buffer: append while the tab is visible, cap at MAX_POINTS (30 min).
+  // Hidden tabs stop appending (their Date.now() drifts anyway) — refetch on
+  // return (plan §33).
   useEffect(() => {
-    if (!traffic.data) return;
-    const windowMs = WINDOW_SECONDS[range] * 1000;
+    if (!traffic.data || !visible) return;
     setSamples((prev) => {
       const next = [
         ...prev,
@@ -54,22 +59,29 @@ export function TrafficPage() {
           totalDownload: traffic.data!.totalDownload,
         },
       ];
-      const cutoff = Date.now() - windowMs;
-      return next.filter((p) => p.time >= cutoff);
+      if (next.length > MAX_POINTS) {
+        return next.slice(next.length - MAX_POINTS);
+      }
+      return next;
     });
-  }, [traffic.data, range, connectionId]);
+  }, [traffic.data, connectionId, visible]);
 
-  // Fix 09: window totals = last cumulative value − first cumulative value.
-  // Summing bytes/sec samples drifts under background tabs / throttling.
+  // UI filter: keep only points inside the selected window.
+  const windowSamples = useMemo(() => {
+    const cutoff = Date.now() - WINDOW_MS[range];
+    return samples.filter((p) => p.time >= cutoff);
+  }, [samples, range]);
+
+  // Fix 09 / §35: window totals = last cumulative value − first cumulative value.
   const totals = useMemo(() => {
-    if (samples.length < 2) return { upload: 0, download: 0 };
-    const first = samples[0];
-    const last = samples[samples.length - 1];
+    if (windowSamples.length < 2) return { upload: 0, download: 0 };
+    const first = windowSamples[0];
+    const last = windowSamples[windowSamples.length - 1];
     return {
       upload: Math.max(0, last.totalUpload - first.totalUpload),
       download: Math.max(0, last.totalDownload - first.totalDownload),
     };
-  }, [samples]);
+  }, [windowSamples]);
 
   if (!client) return <NoClientNotice page="Traffic" />;
 
@@ -78,7 +90,9 @@ export function TrafficPage() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[26px] font-semibold text-text-primary">Traffic</h1>
-          <p className="mt-0.5 text-sm text-text-secondary">上传 vs 下载 · 1 秒采样</p>
+          <p className="mt-0.5 text-sm text-text-secondary">
+            上传 vs 下载 · 1 秒采样 · 保留最近 30 分钟
+          </p>
         </div>
         <SegmentedControl<Range> label="时间范围" options={RANGES} value={range} onChange={setRange} />
       </header>
@@ -109,7 +123,7 @@ export function TrafficPage() {
           {traffic.isLoading ? (
             <Skeleton className="h-80 w-full" />
           ) : (
-            <TrafficChart series={samples.map((s) => ({ time: s.time, upload: s.uploadRate, download: s.downloadRate }))} />
+            <TrafficChart series={windowSamples.map((s) => ({ time: s.time, upload: s.uploadRate, download: s.downloadRate }))} />
           )}
         </CardContent>
       </Card>

@@ -8,19 +8,19 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
-import { ENDPOINTS } from "@/api/endpoints";
+import { surgeKeys } from "@/lib/surge-keys";
 import { SurgeClient } from "@/api/surge-client";
 import type { ProfileInfo } from "@/api/types";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 
 export function ConfigurationPage() {
-  const { client } = useSurgeClientState();
+  const { client, connectionId } = useSurgeClientState();
   const surgeClient = useSurgeClient();
   const queryClient = useQueryClient();
 
   // sensitive=0 masks passwords (PROJECT_SPEC §28)
   const profileQuery = useQuery<ProfileInfo | string>({
-    queryKey: [ENDPOINTS.profilesCurrent],
+    queryKey: surgeKeys.profile(connectionId),
     queryFn: () => surgeClient!.getCurrentProfile(false),
     enabled: !!surgeClient,
     staleTime: Infinity,
@@ -29,7 +29,7 @@ export function ConfigurationPage() {
   const reload = useMutation({
     mutationFn: () => surgeClient!.reloadProfile(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [ENDPOINTS.profilesCurrent] });
+      queryClient.invalidateQueries({ queryKey: surgeKeys.profile(connectionId) });
       toast.success("配置文件已重新加载");
     },
     onError: () => toast.error("重新加载配置失败"),

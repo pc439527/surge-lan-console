@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -7,7 +7,9 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
+import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { formatEventTime } from "@/lib/format";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useEventsQuery, type DisplayEvent } from "@/features/shared/queries";
 
 type Filter = "all" | "info" | "warn" | "error";
@@ -22,6 +24,10 @@ export function EventsPage() {
   const { client } = useSurgeClientState();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // V1.2: "/" focuses the search box.
+  useKeyboardShortcuts({ "/": () => searchRef.current?.focus() });
 
   const eventsQuery = useEventsQuery();
 
@@ -57,7 +63,7 @@ export function EventsPage() {
         />
         <div className="relative min-w-[220px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-          <Input className="pl-9" placeholder="搜索事件..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input ref={searchRef} className="pl-9" placeholder="搜索事件..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
@@ -72,6 +78,14 @@ export function EventsPage() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
+          ) : eventsQuery.isError ? (
+            <ErrorStateView error={eventsQuery.error} api="/v1/events" compact onRetry={() => eventsQuery.refetch()} />
+          ) : (eventsQuery.data ?? []).length === 0 ? (
+            <DataEmpty
+              title="暂无事件"
+              description="Surge 当前没有返回系统事件。"
+              compact
+            />
           ) : (
             <div className="space-y-1">
               {filtered.map((evt: DisplayEvent) => (
@@ -84,7 +98,7 @@ export function EventsPage() {
                 </div>
               ))}
               {filtered.length === 0 && (
-                <p className="py-10 text-center text-sm text-text-tertiary">没有匹配的事件。</p>
+                <p className="py-6 text-center text-sm text-text-tertiary">没有匹配的事件。</p>
               )}
             </div>
           )}

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
+import type { PolicyGroupTestResults } from "@/api/types";
 import { usePolicyGroupsQuery } from "@/features/shared/queries";
 
 export { usePolicyGroupsQuery };
@@ -74,5 +75,20 @@ export function useTestGroupMutation() {
       toast.success(`测试完成：${result.available?.length ?? 0} 个策略可用`);
     },
     onError: () => toast.error("策略组测试失败"),
+  });
+}
+
+/**
+ * Per-policy latency after the last group test (PROJECT_SPEC §6.3).
+ * Enabled only after the user has triggered at least one test, then kept
+ * warm with a slow poll so the color grading stays fresh.
+ */
+export function usePolicyTestResultsQuery(enabled: boolean) {
+  const { client, enabled: connEnabled, connectionId } = useEnabledClient();
+  return useQuery<PolicyGroupTestResults>({
+    queryKey: surgeKeys.policyTestResults(connectionId),
+    queryFn: ({ signal }) => client!.getPolicyTestResults(signal),
+    enabled: connEnabled && enabled,
+    refetchInterval: 15_000,
   });
 }

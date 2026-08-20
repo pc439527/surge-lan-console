@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
@@ -16,18 +16,24 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
-import { ENDPOINTS } from "@/api/endpoints";
+import { surgeKeys } from "@/lib/surge-keys";
+import { DataEmpty, ErrorStateView } from "@/components/data-state";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 
 export function ModulesPage() {
-  const { client } = useSurgeClientState();
+  const { client, connectionId } = useSurgeClientState();
   const surgeClient = useSurgeClient();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [pendingToggle, setPendingToggle] = useState<{ name: string; enabled: boolean } | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // V1.2: "/" focuses the search box.
+  useKeyboardShortcuts({ "/": () => searchRef.current?.focus() });
 
   const modulesQuery = useQuery({
-    queryKey: [ENDPOINTS.modules],
+    queryKey: surgeKeys.modules(connectionId),
     queryFn: () => surgeClient!.getModuleList(),
     enabled: !!surgeClient,
   });
@@ -37,7 +43,7 @@ export function ModulesPage() {
       surgeClient!.updateModule(name, enabled),
     onSuccess: (_d, { name, enabled }) => {
       queryClient.setQueryData(
-        [ENDPOINTS.modules],
+        surgeKeys.modules(connectionId),
         (prev: { name: string; enabled: boolean }[] | undefined) =>
           prev?.map((m) => (m.name === name ? { ...m, enabled } : m)) ?? prev,
       );
@@ -65,7 +71,7 @@ export function ModulesPage() {
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-        <Input className="pl-9" placeholder="搜索模块..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input ref={searchRef} className="pl-9" placeholder="搜索模块..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       <Card>
@@ -75,6 +81,14 @@ export function ModulesPage() {
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
+          ) : modulesQuery.isError ? (
+            <ErrorStateView error={modulesQuery.error} api="/v1/modules" compact onRetry={() => modulesQuery.refetch()} />
+          ) : filtered?.length === 0 ? (
+            <DataEmpty
+              title="没有发现已安装模块"
+              description="当前 Surge 实例没有返回模块数据。如果期望有模块，请检查 API 是否被平台支持。"
+              compact
+            />
           ) : (
             <div className="divide-y divide-border/50">
               {filtered?.map((mod) => (
@@ -89,9 +103,6 @@ export function ModulesPage() {
                   />
                 </div>
               ))}
-              {filtered?.length === 0 && (
-                <p className="px-3 py-10 text-center text-sm text-text-tertiary">没有匹配的模块。</p>
-              )}
             </div>
           )}
         </CardContent>

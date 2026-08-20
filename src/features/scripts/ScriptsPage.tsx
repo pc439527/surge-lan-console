@@ -6,6 +6,15 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Textarea } from "@/components/ui/Textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import {
   Drawer,
   DrawerBody,
@@ -14,18 +23,39 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/Drawer";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
-import { ENDPOINTS } from "@/api/endpoints";
+import { surgeKeys } from "@/lib/surge-keys";
+import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 
+/** Mock environments accepted by POST /v1/scripting/evaluate. */
+const MOCK_TYPES = [
+  { value: "cron", label: "cron" },
+  { value: "http-request", label: "http-request" },
+  { value: "http-response", label: "http-response" },
+  { value: "rule", label: "rule" },
+  { value: "dns", label: "dns" },
+  { value: "event", label: "event" },
+  { value: "generic", label: "generic" },
+];
+
 export function ScriptsPage() {
-  const { client } = useSurgeClientState();
+  const { client, connectionId } = useSurgeClientState();
   const surgeClient = useSurgeClient();
   const [viewing, setViewing] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState<string | null>(null);
+  const [scriptText, setScriptText] = useState("");
+  const [mockType, setMockType] = useState("cron");
 
   const scriptsQuery = useQuery({
-    queryKey: [ENDPOINTS.scripting],
+    queryKey: surgeKeys.scripts(connectionId),
     queryFn: () => surgeClient!.getScriptList(),
     enabled: !!surgeClient,
   });
@@ -35,6 +65,19 @@ export function ScriptsPage() {
     onSuccess: () => toast.success("Cron 脚本已执行"),
     onError: () => toast.error("Cron 执行失败"),
   });
+
+  // PROJECT_SPEC §6.9 — Evaluate runs the snippet in a sandboxed mock env.
+  const evaluate = useMutation({
+    mutationFn: () => surgeClient!.evaluateScript(scriptText, mockType, 5),
+    onSuccess: () => toast.success("评估完成"),
+    onError: () => toast.error("脚本评估失败"),
+  });
+
+  const openEvaluate = (name: string) => {
+    setEvaluating(name);
+    setScriptText("");
+    setMockType("cron");
+  };
 
   if (!client) return <NoClientNotice page="Scripts" />;
 
@@ -57,6 +100,14 @@ export function ScriptsPage() {
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
             </div>
+          ) : scriptsQuery.isError ? (
+            <ErrorStateView error={scriptsQuery.error} api="/v1/scripting" compact onRetry={() => scriptsQuery.refetch()} />
+          ) : scriptsQuery.data?.length === 0 ? (
+            <DataEmpty
+              title="没有发现脚本"
+              description="当前配置未启用 HTTP / Rule / DNS / Event / Cron 脚本，或该平台不支持脚本查询接口。"
+              compact
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
@@ -70,7 +121,7 @@ export function ScriptsPage() {
                 </thead>
                 <tbody>
                   {scriptsQuery.data?.map((script) => (
-                    <tr key={`${script.name}-${script.type}`} className="border-b border-border/50">
+                    <tr key={script.name + "-" + script.type} className="border-b border-border/50">
                       <td className="px-3 py-2.5 text-[13px] font-medium text-text-primary">{script.name}</td>
                       <td className="px-3 py-2.5">
                         <Badge variant="muted" className="font-mono text-[11px]">{script.type}</Badge>
@@ -84,7 +135,7 @@ export function ScriptsPage() {
                               运行
                             </Button>
                           ) : (
-                            <Button size="sm" variant="ghost" onClick={() => setEvaluating(script.name)}>
+                            <Button size="sm" variant="ghost" onClick={() => openEvaluate(script.name)}>
                               <TerminalSquare className="h-3.5 w-3.5" />
                               评估
                             </Button>
@@ -97,13 +148,6 @@ export function ScriptsPage() {
                       </td>
                     </tr>
                   ))}
-                  {scriptsQuery.data?.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-3 py-10 text-center text-sm text-text-tertiary">
-                        没有找到脚本。
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -120,25 +164,66 @@ export function ScriptsPage() {
           <DrawerBody>
             <div className="space-y-3 text-sm text-text-secondary">
               <p>当前版本不支持在线编辑脚本。</p>
-              <p>请在设备上的 Surge 应用中修改脚本源码。</p>
+              <p>请在设备上的 Surge 应用中修改脚本源码，或使用「评估」在模拟环境中运行代码片段。</p>
             </div>
           </DrawerBody>
         </DrawerContent>
       </Drawer>
 
-      <Drawer open={evaluating !== null} onOpenChange={(open) => !open && setEvaluating(null)}>
-        <DrawerContent side="right">
-          <DrawerHeader>
-            <DrawerTitle>评估 {evaluating}</DrawerTitle>
-            <DrawerDescription>模拟环境执行（开发中）</DrawerDescription>
-          </DrawerHeader>
-          <DrawerBody>
-            <p className="text-sm text-text-secondary">
-              脚本评估需要脚本内容，将在后续版本提供在线编辑后支持。
-            </p>
-          </DrawerBody>
-        </DrawerContent>
-      </Drawer>
+      <Dialog open={evaluating !== null} onOpenChange={(open) => !open && setEvaluating(null)}>
+        <DialogContent className="w-[min(92vw,560px)]">
+          <DialogHeader>
+            <DialogTitle>评估{evaluating ? " " + evaluating : ""}</DialogTitle>
+            <DialogDescription>
+              在沙箱模拟环境中执行脚本片段（POST /v1/scripting/evaluate）。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Textarea
+              value={scriptText}
+              onChange={(e) => setScriptText(e.target.value)}
+              placeholder={"粘贴要评估的脚本源码…\n\n示例：\n$httpClient.get(\"http://www.gstatic.com/generate_204\", function(error, response) {\n  console.log(response.status)\n  $done()\n})"}
+              className="h-40 font-mono text-xs"
+            />
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-xs text-text-secondary">模拟环境</span>
+              <Select value={mockType} onValueChange={setMockType}>
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="cron" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MOCK_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {evaluate.data !== undefined && (
+              <div className="rounded-sm border border-border bg-surface/60 p-3">
+                <p className="mb-1 text-xs font-medium text-text-tertiary">输出</p>
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-text-primary">
+                  {formatEvalResult(evaluate.data)}
+                </pre>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEvaluating(null)}>
+              关闭
+            </Button>
+            <Button onClick={() => evaluate.mutate()} disabled={!scriptText.trim() || evaluate.isPending}>
+              {evaluate.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              运行评估
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+/** Render evaluate output defensively — response shapes vary by mock type. */
+function formatEvalResult(data: unknown): string {
+  if (typeof data === "string") return data;
+  return JSON.stringify(data, null, 2);
 }
