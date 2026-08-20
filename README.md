@@ -12,6 +12,7 @@
 | `DESIGN_SYSTEM.md` | iOS 26 / Liquid Glass 设计规范 |
 | `AGENTS.md` | DeepSeek Harness 开发约束与硬性规则 |
 | `ROADMAP.md` | Phase 01–10 开发路线与验收标准 |
+| `OPTIMIZATION_PLAN.md` | v0.2.0 实机兼容改造方案（Task 01–10，从 P0 开始顺序执行） |
 
 ## 快速开始
 
