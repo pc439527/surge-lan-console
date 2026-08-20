@@ -9,6 +9,8 @@ import {
   DrawerTrigger,
 } from "@/components/ui/Drawer";
 import { cn } from "@/lib/cn";
+import { isFeatureUnsupported } from "@/api/capability";
+import { useCapabilitiesQuery } from "@/features/shared/capability";
 import { NAV_SECTIONS } from "./nav";
 
 /**
@@ -17,6 +19,7 @@ import { NAV_SECTIONS } from "./nav";
  * bottom tab bar stays for the 5 most-used routes; the drawer covers the rest.
  */
 export function MobileNavDrawer() {
+  const { data: capability } = useCapabilitiesQuery();
   return (
     <Drawer>
       <DrawerTrigger asChild>
@@ -35,23 +38,32 @@ export function MobileNavDrawer() {
                 {section.title}
               </p>
               <div className="space-y-0.5">
-                {section.items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      cn(
-                        "flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium transition-colors duration-hover",
-                        isActive
-                          ? "bg-accent/12 text-accent"
-                          : "text-text-secondary hover:bg-surface hover:text-text-primary",
-                      )
-                    }
-                  >
-                    <item.icon className="h-[18px] w-[18px] shrink-0" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
+                {section.items.map((item) => {
+                  const unsupported = item.feature ? isFeatureUnsupported(capability, item.feature) : false;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        cn(
+                          "flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium transition-colors duration-hover",
+                          unsupported && "opacity-55",
+                          isActive
+                            ? "bg-accent/12 text-accent"
+                            : "text-text-secondary hover:bg-surface hover:text-text-primary",
+                        )
+                      }
+                    >
+                      <item.icon className="h-[18px] w-[18px] shrink-0" />
+                      <span>{item.label}</span>
+                      {unsupported && (
+                        <span className="ml-auto shrink-0 rounded-pill border border-border bg-surface px-1.5 py-0.5 text-[10px] leading-none text-text-tertiary">
+                          不可用
+                        </span>
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             </div>
           ))}

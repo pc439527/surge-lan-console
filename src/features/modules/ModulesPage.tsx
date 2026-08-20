@@ -20,6 +20,8 @@ import { surgeKeys } from "@/lib/surge-keys";
 import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
+import { CapabilityNotice } from "@/features/shared/CapabilityNotice";
+import { useCapabilityFeature } from "@/features/shared/capability";
 
 export function ModulesPage() {
   const { client, connectionId } = useSurgeClientState();
@@ -32,10 +34,14 @@ export function ModulesPage() {
   // V1.2: "/" focuses the search box.
   useKeyboardShortcuts({ "/": () => searchRef.current?.focus() });
 
+  // v0.3.0：能力探测确认平台不支持 Modules API 时，直接给出解释而非报错。
+  const capModules = useCapabilityFeature("modules");
+  const capUnsupported = capModules === "unsupported";
+
   const modulesQuery = useQuery({
     queryKey: surgeKeys.modules(connectionId),
     queryFn: () => surgeClient!.getModuleList(),
-    enabled: !!surgeClient,
+    enabled: !!surgeClient && !capUnsupported,
   });
 
   const toggle = useMutation({
@@ -69,6 +75,10 @@ export function ModulesPage() {
         <p className="mt-0.5 text-sm text-text-secondary">已安装与可用模块</p>
       </header>
 
+      {capUnsupported ? (
+        <CapabilityNotice feature="modules" api="/v1/modules" />
+      ) : (
+        <>
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
         <Input ref={searchRef} className="pl-9" placeholder="搜索模块..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -107,6 +117,8 @@ export function ModulesPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
 
       <Dialog open={pendingToggle !== null} onOpenChange={(open) => !open && setPendingToggle(null)}>
         <DialogContent>

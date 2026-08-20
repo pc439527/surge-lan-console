@@ -209,6 +209,9 @@ export function DnsPage() {
               </div>
             )}
           </CardContent>
+          <p className="px-5 pb-4 pt-1 text-[11px] leading-relaxed text-text-tertiary">
+            列含义：服务器 = DNS 解析来源（如 203.0.113.53）· 路径 = 解析链路 · 查询 = 单次解析耗时 · TTL = 缓存剩余时间。
+          </p>
         </Card>
 
         <Card>
@@ -217,7 +220,7 @@ export function DnsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-text-tertiary">
-              对指定域名发起 DNS 解析延迟测试（POST /v1/test/dns_delay）。
+              对指定域名发起 DNS 解析延迟测试（POST /v1/test/dns_delay）。结果中数值小于 1 的按秒换算为毫秒显示。
             </p>
             <div className="relative">
               <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
@@ -328,14 +331,40 @@ function formatExpiry(ts: number | undefined): string {
   return Math.max(1, Math.round(diff / 1000)) + "s";
 }
 
-/** Render the DNS delay response defensively — Surge builds vary. */
+/**
+ * 把 DNS 延迟探测结果渲染为可读文本（v0.3.0 解释化）。
+ *
+ * Surge 各平台返回的单位不一致：部分直接给毫秒，部分给秒（如 0.02324），
+ * 甚至以字符串返回。规则：数值 < 1 视为秒，换算为毫秒显示；带单位字符串
+ * （如 "23ms"）原样保留；无法解析的值返回 null 让调用方展示原文。
+ */
 function formatDnsResult(data: unknown): string {
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
-    if (typeof obj.result === "string") return obj.result;
-    if (typeof obj.latency === "number") return String(obj.latency) + "ms";
-    if (typeof obj.delay === "number") return String(obj.delay) + "ms";
+    for (const key of ["latency", "delay"]) {
+      const ms = latencyToMsText(obj[key]);
+      if (ms !== null) return ms;
+    }
+    if (typeof obj.result === "string") {
+      return latencyToMsText(obj.result) ?? obj.result;
+    }
   }
-  if (typeof data === "string") return data;
+  if (typeof data === "string") {
+    return latencyToMsText(data) ?? data;
+  }
   return JSON.stringify(data, null, 2);
+}
+
+function latencyToMsText(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 1 ? `${Math.round(value * 1000)}ms` : `${Math.round(value)}ms`;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const numeric = Number.parseFloat(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric < 1 ? `${Math.round(numeric * 1000)}ms` : `${Math.round(numeric)}ms`;
+    }
+  }
+  return null;
 }

@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { useConnectionStore } from "@/stores/connection-store";
 import { compactBuildLabel } from "@/lib/version";
+import { isFeatureUnsupported } from "@/api/capability";
+import { useCapabilitiesQuery } from "@/features/shared/capability";
 import { NAV_SECTIONS } from "./nav";
 
 interface SidebarProps {
@@ -15,6 +17,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const connections = useConnectionStore((s) => s.connections);
   const activeId = useConnectionStore((s) => s.activeConnectionId);
   const active = connections.find((c) => c.id === activeId) ?? null;
+  // 能力报告（全站共享同一份缓存）—— 探测确认不支持的功能在导航中标记。
+  const { data: capability } = useCapabilitiesQuery();
 
   return (
     <aside
@@ -43,25 +47,37 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </p>
             )}
             <div className="space-y-0.5">
-              {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  title={item.label}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium outline-none transition-colors duration-hover ease-apple focus-visible:ring-2 focus-visible:ring-accent/50",
-                      collapsed && "justify-center px-0",
-                      isActive
-                        ? "bg-accent/12 text-accent"
-                        : "text-text-secondary hover:bg-surface hover:text-text-primary",
-                    )
-                  }
-                >
-                  <item.icon className="h-[18px] w-[18px] shrink-0" />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </NavLink>
-              ))}
+              {section.items.map((item) => {
+                const unsupported = item.feature ? isFeatureUnsupported(capability, item.feature) : false;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    title={unsupported ? item.label + "（当前平台不可用）" : item.label}
+                    className={({ isActive }) =>
+                      cn(
+                        "relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium outline-none transition-colors duration-hover ease-apple focus-visible:ring-2 focus-visible:ring-accent/50",
+                        collapsed && "justify-center px-0",
+                        unsupported && "opacity-55",
+                        isActive
+                          ? "bg-accent/12 text-accent"
+                          : "text-text-secondary hover:bg-surface hover:text-text-primary",
+                      )
+                    }
+                  >
+                    <item.icon className="h-[18px] w-[18px] shrink-0" />
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    {unsupported &&
+                      (collapsed ? (
+                        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-pill bg-warning" />
+                      ) : (
+                        <span className="ml-auto shrink-0 rounded-pill border border-border bg-surface px-1.5 py-0.5 text-[10px] leading-none text-text-tertiary">
+                          不可用
+                        </span>
+                      ))}
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
         ))}

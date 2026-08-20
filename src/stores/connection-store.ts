@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { createSurgeClient, type SurgeConnectionConfig } from "@/api";
 import { SurgeClient } from "@/api/surge-client";
 import { loadApiKey } from "./api-key-storage";
+import type { PlatformOverride } from "@/api/capability";
 
 export type ConnectionProtocol = "http" | "https";
 
@@ -19,6 +20,11 @@ export interface SurgeConnection {
    * plain HTTP — direct calls would be blocked as mixed content.
    */
   useProxy?: boolean;
+  /**
+   * 平台手动指定（v0.3.0 Capability Engine）。自动判定不可靠时可覆盖；
+   * 未设置时由 /v1 探测结果自动判定。
+   */
+  platform?: PlatformOverride;
 }
 
 interface ConnectionState {

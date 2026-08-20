@@ -36,6 +36,8 @@ import { SurgeClient } from "@/api/surge-client";
 import { parseScriptsFromProfile } from "@/lib/profile-scripts";
 import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
+import { CapabilityNotice } from "@/features/shared/CapabilityNotice";
+import { useCapabilityFeature } from "@/features/shared/capability";
 
 /** Unified script row — API data or the Configuration [Script] fallback (T11). */
 interface DisplayScript {
@@ -64,10 +66,14 @@ export function ScriptsPage() {
   const [scriptText, setScriptText] = useState("");
   const [mockType, setMockType] = useState("cron");
 
+  // v0.3.0：能力探测确认平台不支持 Scripting API 时直接给出解释。
+  const capScripts = useCapabilityFeature("scripts");
+  const capUnsupported = capScripts === "unsupported";
+
   const scriptsQuery = useQuery({
     queryKey: surgeKeys.scripts(connectionId),
     queryFn: () => surgeClient!.getScriptList(),
-    enabled: !!surgeClient,
+    enabled: !!surgeClient && !capUnsupported,
   });
 
   // T11 fallback: API 返回 [] 并不等于「没有脚本」 — 配置文件的 [Script] 段
@@ -130,6 +136,9 @@ export function ScriptsPage() {
         </p>
       </header>
 
+      {capUnsupported ? (
+        <CapabilityNotice feature="scripts" api="/v1/scripting" />
+      ) : (
       <Card>
         <CardHeader>
           <CardTitle>全部脚本</CardTitle>
@@ -206,6 +215,7 @@ export function ScriptsPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
       <Drawer open={viewing !== null} onOpenChange={(open) => !open && setViewing(null)}>
         <DrawerContent side="right">

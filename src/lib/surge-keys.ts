@@ -36,4 +36,6 @@ export const surgeKeys = {
     [...surgeKeys.root(connectionId), "profile"] as const,
   rules: (connectionId: string | null) =>
     [...surgeKeys.root(connectionId), "rules"] as const,
+  capability: (connectionId: string | null, platformOverride?: string) =>
+    [...surgeKeys.root(connectionId), "capability", platformOverride ?? "auto"] as const,
 } as const;

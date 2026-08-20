@@ -24,6 +24,13 @@ import {
 } from "@/stores/connection-store";
 import { SurgeError } from "@/api/errors";
 import { cn } from "@/lib/cn";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 
 interface FormState {
   name: string;
@@ -33,6 +40,8 @@ interface FormState {
   apiKey: string;
   remember: boolean;
   useProxy: boolean;
+  /** 平台手动指定（空 = 自动检测）。 */
+  platform: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -43,6 +52,7 @@ const EMPTY_FORM: FormState = {
   apiKey: "",
   remember: false,
   useProxy: false,
+  platform: "auto",
 };
 
 export function ConnectionsPage() {
@@ -76,6 +86,7 @@ export function ConnectionsPage() {
       apiKey: loadApiKey(conn.id) ?? "",
       remember: isApiKeyRemembered(conn.id),
       useProxy: conn.useProxy ?? false,
+      platform: conn.platform ?? "auto",
     });
     setFormOpen(true);
   };
@@ -91,6 +102,7 @@ export function ConnectionsPage() {
       host: form.host.trim(),
       port: Number(form.port) || 6171,
       useProxy: form.useProxy,
+      platform: (form.platform === "auto" ? undefined : form.platform) as SurgeConnection["platform"],
     };
 
     if (editing) {
@@ -203,6 +215,7 @@ export function ConnectionsPage() {
                     {conn.protocol}://{conn.host}:{conn.port}
                   </span>
                   {conn.useProxy && <Badge variant="warning">代理</Badge>}
+                  {conn.platform && <Badge variant="muted">{platformBadgeLabel(conn.platform)}</Badge>}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -300,6 +313,24 @@ export function ConnectionsPage() {
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-xs font-medium text-text-secondary">平台</label>
+              <Select value={form.platform} onValueChange={(v) => setForm({ ...form, platform: v })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="自动检测" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自动检测</SelectItem>
+                  <SelectItem value="ios">Surge iOS</SelectItem>
+                  <SelectItem value="tvos">Apple TV / tvOS</SelectItem>
+                  <SelectItem value="macos">Surge macOS</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-relaxed text-text-tertiary">
+                平台接口能力由 /v1 探测自动判定；若判定不准确（如 Apple TV 盒子），可在此手动指定。
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-text-secondary">API Key</label>
               <Input
                 type="password"
@@ -364,4 +395,15 @@ export function ConnectionsPage() {
       </Dialog>
     </div>
   );
+}
+
+function platformBadgeLabel(platform: NonNullable<SurgeConnection["platform"]>): string {
+  switch (platform) {
+    case "ios":
+      return "iOS";
+    case "tvos":
+      return "Apple TV";
+    case "macos":
+      return "macOS";
+  }
 }

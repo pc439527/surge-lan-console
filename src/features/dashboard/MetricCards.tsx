@@ -1,20 +1,21 @@
-import { ArrowDown, ArrowUp, Layers, Radio } from "lucide-react";
+import { ArrowDown, ArrowUp, Gauge, Radio } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { formatBytes, formatRate } from "@/lib/format";
+import { formatRate } from "@/lib/format";
 
 export interface MetricsData {
   uploadRate: number;
   downloadRate: number;
   activeRequests: number;
-  totalTraffic: number;
+  /** /v1/outbound 探测延迟（Capability Engine）；null = 不可用。 */
+  latencyMs: number | null;
   loading: boolean;
 }
 
 export function MetricCards({ data }: { data: MetricsData }) {
   if (data.loading) {
     return (
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(0,420px))] 2xl:justify-center">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
           <Card key={i} className="p-4">
             <Skeleton className="h-4 w-16" />
@@ -41,23 +42,23 @@ export function MetricCards({ data }: { data: MetricsData }) {
       hint: "当前下载速率（所有接口合计）",
     },
     {
+      label: "延迟",
+      value: data.latencyMs !== null ? `${Math.round(data.latencyMs)}ms` : "—",
+      icon: Gauge,
+      color: "text-success",
+      hint: "API 往返延迟（/v1/outbound 探测）",
+    },
+    {
       label: "活动连接",
       value: String(data.activeRequests),
       icon: Radio,
-      color: "text-success",
-      hint: "Surge 当前的活动连接数（active requests）",
-    },
-    {
-      label: "总流量",
-      value: formatBytes(data.totalTraffic),
-      icon: Layers,
       color: "text-text-primary",
-      hint: "Surge 当前运行会话的累计流量",
+      hint: "Surge 当前的活动连接数（active requests）",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(0,420px))] 2xl:justify-center">
+    <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
       {items.map((item) => (
         <Card key={item.label} className="p-4" title={item.hint}>
           <div className="flex items-center gap-2">

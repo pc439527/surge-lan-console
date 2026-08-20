@@ -54,7 +54,7 @@ export function ConfigurationPage() {
         <div>
           <h1 className="text-[26px] font-semibold text-text-primary">Configuration</h1>
           <p className="mt-0.5 text-sm text-text-secondary">
-            {profileName} · 敏感字段已隐藏
+            {profileQuery.isLoading ? "正在加载配置…" : `${profileName} · 敏感字段已隐藏`}
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => reload.mutate()} disabled={reload.isPending}>
@@ -65,7 +65,7 @@ export function ConfigurationPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{profileName}</CardTitle>
+          <CardTitle>{profileQuery.isLoading ? "Configuration" : profileName}</CardTitle>
         </CardHeader>
         <CardContent>
           {profileQuery.isLoading ? (

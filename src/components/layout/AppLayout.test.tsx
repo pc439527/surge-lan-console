@@ -1,14 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, beforeEach } from "vitest";
 import { AppLayout } from "./AppLayout";
 import { useConnectionStore } from "@/stores/connection-store";
 
 function renderLayout() {
+  // Sidebar 使用 useCapabilitiesQuery —— 需要 QueryClientProvider。
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <AppLayout />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <AppLayout />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

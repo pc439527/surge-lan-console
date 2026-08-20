@@ -12,6 +12,8 @@ import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import type { RuleInfo } from "@/api/types";
 import { cn } from "@/lib/cn";
+import { CapabilityNotice } from "@/features/shared/CapabilityNotice";
+import { useCapabilityFeature } from "@/features/shared/capability";
 
 /**
  * Rules (OPTIMIZATION_PLAN Task 05, §39–40).
@@ -30,10 +32,14 @@ export function RulesPage() {
 
   useKeyboardShortcuts({ "/": () => searchRef.current?.focus() });
 
+  // v0.3.0：能力探测确认平台不支持 Rules API 时直接给出解释。
+  const capRules = useCapabilityFeature("rules");
+  const capUnsupported = capRules === "unsupported";
+
   const rulesQuery = useQuery({
     queryKey: surgeKeys.rules(connectionId),
     queryFn: () => surgeClient!.getRules(),
-    enabled: !!surgeClient,
+    enabled: !!surgeClient && !capUnsupported,
     staleTime: 60_000,
   });
 
@@ -45,6 +51,13 @@ export function RulesPage() {
     }
     return counts;
   }, [rulesQuery.data]);
+
+  // v0.3.0 汇总条：按数量降序列出前 5 类规则。
+  const topRuleTypes = useMemo(() => {
+    return [...typeCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [typeCounts]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -69,6 +82,10 @@ export function RulesPage() {
         <p className="mt-0.5 text-sm text-text-secondary">当前配置的活动规则集 · 共 {(rulesQuery.data ?? []).length} 条</p>
       </header>
 
+      {capUnsupported ? (
+        <CapabilityNotice feature="rules" api="/v1/rules" />
+      ) : (
+      <>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
@@ -94,6 +111,13 @@ export function RulesPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-tertiary">
+        <span>共 {(rulesQuery.data ?? []).length} 条</span>
+        {topRuleTypes.map(([type, count]) => (
+          <span key={type} className="font-mono">{type} {count}</span>
+        ))}
       </div>
 
       <Card>
@@ -138,6 +162,8 @@ export function RulesPage() {
           )}
         </CardContent>
       </Card>
+      </>
+      )}
     </div>
   );
 }

@@ -84,6 +84,10 @@ export class MockSurgeClient {
     endpoint: string,
   ): Promise<{ status: number | null; latencyMs: number | null; raw: unknown; error?: unknown }> {
     const started = performance.now();
+    // /v1/outbound 模拟真实往返延迟（18ms，与 testConnection 一致），
+    // 供 Dashboard 延迟指标展示。
+    const latencyMs =
+      endpoint === "/v1/outbound" ? 18 : Math.max(1, Math.round(performance.now() - started));
     const responses: Record<string, unknown> = {
       "/v1/outbound": { mode: this.outboundMode },
       "/v1/traffic": await this.getTraffic(),
@@ -97,7 +101,7 @@ export class MockSurgeClient {
     };
     return {
       status: 200,
-      latencyMs: Math.round(performance.now() - started),
+      latencyMs,
       raw: responses[endpoint] ?? null,
     };
   }

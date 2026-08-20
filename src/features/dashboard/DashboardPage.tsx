@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TrafficChart } from "@/features/traffic/TrafficChart";
-import { formatTime, formatEventTime, formatUptime } from "@/lib/format";
+import { formatTime, formatEventTime, formatUptime, formatBytes } from "@/lib/format";
 import { BUILD_INFO } from "@/lib/version";
 import { normalizeEpoch } from "@/api/normalize";
 import { useSurgeClientState } from "@/app/surge-client-context";
+import { PLATFORM_LABEL } from "@/api/capability";
+import { useCapabilitiesQuery } from "@/features/shared/capability";
 import { MetricCards } from "./MetricCards";
 import {
   useActiveRequestsQuery,
@@ -76,6 +78,8 @@ export function DashboardPage() {
   const events = useEventsQuery();
   const groups = usePolicyGroupsQuery();
   const features = useFeaturesQuery();
+  // v0.3.0 Capability Engine：平台判定 + API 延迟（/v1/outbound 探测）。
+  const capability = useCapabilitiesQuery();
 
   // T14: the dashboard only shows ≤8 groups — compute them first so the
   // selections query never fires N requests for groups the page won't render.
@@ -168,23 +172,60 @@ export function DashboardPage() {
         <OutboundModeControl />
       </header>
 
+      {/* v0.3.0 Device banner — 名称 / 地址 / 平台 / API 健康 */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill bg-accent/12 text-accent">
+              <Activity className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-text-primary">
+                {connection ? connection.name : demoMode ? "演示模式" : "未连接"}
+              </p>
+              <p className="font-mono text-xs text-text-tertiary">
+                {connection
+                  ? `${connection.protocol}://${connection.host}:${connection.port}`
+                  : demoMode
+                    ? "Mock Surge 数据"
+                    : "请先添加连接"}
+              </p>
+            </div>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Badge variant="info">
+              {capability.data ? PLATFORM_LABEL[capability.data.platform] : "平台探测中…"}
+              {capability.data && !capability.data.platformDetected && (
+                <span className="text-[10px] text-text-tertiary">· 手动指定</span>
+              )}
+            </Badge>
+            <Badge variant={apiHealthy ? "success" : "danger"}>
+              {apiHealthy ? "API Healthy" : "API Unavailable"}
+            </Badge>
+            {demoMode && <Badge variant="warning">DEMO</Badge>}
+          </div>
+        </div>
+      </Card>
+
       <MetricCards
         data={{
           uploadRate: traffic.data?.uploadRate ?? 0,
           downloadRate: traffic.data?.downloadRate ?? 0,
           activeRequests: active.data?.length ?? 0,
-          totalTraffic:
-            (traffic.data?.totalUpload ?? 0) + (traffic.data?.totalDownload ?? 0),
+          latencyMs: capability.data?.latencyMs ?? null,
           loading,
         }}
       />
 
-      {/* Row 1 — Traffic + Surge Status */}
-      <div className="grid items-start gap-4 xl:grid-cols-5">
-        <Card className="xl:col-span-3">
+      {/* Row 1 — Traffic + Surge Status（12 列网格：图 8 / 状态 4） */}
+      <div className="grid items-start gap-4 xl:grid-cols-12">
+        <Card className="xl:col-span-8">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>实时流量</CardTitle>
-            <span className="text-xs text-text-tertiary">最近 5 分钟 · 1 秒采样</span>
+            <span className="text-xs text-text-tertiary">
+              最近 5 分钟 · 1 秒采样 · 会话流量 
+              {formatBytes((traffic.data?.totalUpload ?? 0) + (traffic.data?.totalDownload ?? 0))}
+            </span>
           </CardHeader>
           <CardContent>
             {traffic.isLoading ? (
@@ -197,7 +238,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2">
+        <Card className="xl:col-span-4">
           <CardHeader>
             <CardTitle>Surge 状态</CardTitle>
           </CardHeader>
@@ -226,9 +267,9 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      {/* Row 2 — Policy Summary + System Status */}
-      <div className="grid items-start gap-4 xl:grid-cols-5">
-        <Card className="xl:col-span-3">
+      {/* Row 2 — Policy Summary + System Status（12 列网格：策略 8 / 系统 4） */}
+      <div className="grid items-start gap-4 xl:grid-cols-12">
+        <Card className="xl:col-span-8">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>重要策略组</CardTitle>
             <Button variant="ghost" size="sm" asChild>
@@ -258,11 +299,16 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2">
+        <Card className="xl:col-span-4">
           <CardHeader>
             <CardTitle>系统状态</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2.5">
+            <StatusRow
+              label="平台"
+              value={capability.data ? PLATFORM_LABEL[capability.data.platform] : "探测中…"}
+              tone={capability.data && capability.data.platform !== "unknown" ? "success" : "muted"}
+            />
             <StatusRow label="API" value={apiHealthy ? "Healthy" : "Unavailable"} tone={apiHealthy ? "success" : "danger"} />
             <StatusRow label="连接" value={connection ? `${connection.host}:${connection.port}` : "—"} mono />
             <StatusRow label="Version" value={`v${BUILD_INFO.version}`} mono />
