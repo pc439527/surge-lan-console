@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 # ── Build identity (OPTIMIZATION_PLAN §84–85) ─────────────────
 #   docker build \
-#     --build-arg APP_VERSION=0.2.0 \
+#     --build-arg APP_VERSION=0.2.1 \
 #     --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
 #     --build-arg BUILD_TIME=$(date -Iseconds) \
 #     -t surge-lan-console:$(git rev-parse --short HEAD) .
-ARG APP_VERSION=0.2.0
+ARG APP_VERSION=0.2.1
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 ARG BUILD_TIME=unknown

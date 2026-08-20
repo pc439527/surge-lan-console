@@ -14,7 +14,7 @@ export interface MetricsData {
 export function MetricCards({ data }: { data: MetricsData }) {
   if (data.loading) {
     return (
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(0,420px))] 2xl:justify-center">
         {[0, 1, 2, 3].map((i) => (
           <Card key={i} className="p-4">
             <Skeleton className="h-4 w-16" />
@@ -57,7 +57,7 @@ export function MetricCards({ data }: { data: MetricsData }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(0,420px))] 2xl:justify-center">
       {items.map((item) => (
         <Card key={item.label} className="p-4" title={item.hint}>
           <div className="flex items-center gap-2">

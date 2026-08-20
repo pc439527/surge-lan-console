@@ -33,8 +33,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      {/* Nav — scrollable but invisible scrollbar (T09) */}
+      <nav className="scrollbar-none flex-1 overflow-y-auto px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.title} className="mb-5">
             {!collapsed && (

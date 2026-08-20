@@ -5,11 +5,13 @@ import {
   Ban,
   CheckCircle2,
   ChevronDown,
+  Clock,
   CloudOff,
   Inbox,
   KeyRound,
   Loader2,
   RefreshCw,
+  ServerOff,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -33,6 +35,9 @@ const STATE_META: Record<EndpointDiagnostic["state"], { label: string; variant: 
   unsupported: { label: "不支持", variant: "warning" },
   unauthorized: { label: "未授权", variant: "danger" },
   "network-error": { label: "网络错误", variant: "danger" },
+  timeout: { label: "超时", variant: "warning" },
+  "server-error": { label: "服务错误", variant: "danger" },
+  "api-error": { label: "API 错误", variant: "danger" },
 };
 
 export function DiagnosticsPage() {
@@ -128,8 +133,15 @@ export function DiagnosticsPage() {
                       </div>
                       {ep.raw !== undefined && (
                         <div className="mt-3">
-                          <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">Raw Structure</p>
-                          <pre className="max-h-72 overflow-auto rounded-sm border border-border bg-surface/60 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                          <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                            Raw Structure
+                            {ep.rawRecords !== undefined && (
+                              <span className="ml-2 normal-case tracking-normal text-text-secondary">
+                                {ep.rawRecords} records · preview first {Math.min(ep.rawRecords, 3)}
+                              </span>
+                            )}
+                          </p>
+                          <pre className="scrollbar-thin max-h-72 overflow-auto rounded-sm border border-border bg-surface/60 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
                             {JSON.stringify(ep.raw, null, 2)}
                           </pre>
                         </div>
@@ -164,6 +176,12 @@ function StateIcon({ state }: { state: EndpointDiagnostic["state"] }) {
       return <KeyRound className="h-4 w-4 shrink-0 text-danger" />;
     case "network-error":
       return <Ban className="h-4 w-4 shrink-0 text-danger" />;
+    case "timeout":
+      return <Clock className="h-4 w-4 shrink-0 text-warning" />;
+    case "server-error":
+      return <ServerOff className="h-4 w-4 shrink-0 text-danger" />;
+    case "api-error":
+      return <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />;
   }
 }
 

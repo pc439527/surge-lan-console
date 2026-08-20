@@ -4,6 +4,7 @@ export type SurgeErrorKind =
   | "authentication"
   | "timeout"
   | "api"
+  | "server-error"
   | "unsupported"
   | "browser-security";
 

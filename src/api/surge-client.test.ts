@@ -64,6 +64,38 @@ describe("SurgeClient", () => {
     await expect(client.getOutboundMode()).rejects.toMatchObject({ kind: "unsupported" });
   });
 
+  it("maps 405 to unsupported, 408 to timeout, 5xx to server-error (T05)", async () => {
+    mock.onGet("/v1/outbound").reply(405, {});
+    await expect(client.getOutboundMode()).rejects.toMatchObject({ kind: "unsupported" });
+
+    mock.onGet("/v1/outbound").reply(408, {});
+    await expect(client.getOutboundMode()).rejects.toMatchObject({ kind: "timeout" });
+
+    mock.onGet("/v1/outbound").reply(502, {});
+    await expect(client.getOutboundMode()).rejects.toMatchObject({ kind: "server-error" });
+  });
+
+  it("getEvents normalizes drifted event rows (T03)", async () => {
+    mock.onGet("/v1/events").reply(200, {
+      events: [
+        { identifier: "a", date: 1700000000, type: "2", content: "boom" },
+        { identifier: "b", date: "2024-01-01T00:00:00.000Z", type: "1", content: "warn" },
+      ],
+    });
+    const list = await client.getEvents();
+    expect(list.events).toHaveLength(2);
+    expect(list.events[0]).toMatchObject({ type: 2, date: new Date(1700000000 * 1000).toISOString() });
+    expect(list.events[1].type).toBe(1);
+  });
+
+  it("getRules maps field-drift aliases (T02)", async () => {
+    mock.onGet("/v1/rules").reply(200, [
+      { rule_type: "DOMAIN", rule: "x.com", policy_name: "DIRECT" },
+    ]);
+    const rules = await client.getRules();
+    expect(rules[0]).toMatchObject({ type: "DOMAIN", content: "x.com", policy: "DIRECT" });
+  });
+
   it("testConnection reports reachable+authenticated on success", async () => {
     mock.onGet("/v1/outbound").reply(200, { policy: "rule" });
     const result = await client.testConnection();

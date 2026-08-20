@@ -166,7 +166,7 @@ export function RequestsPage() {
       },
       {
         accessorKey: "policyName",
-        header: "策略",
+        header: "出口",
         cell: (info: CellContext<RequestItem, unknown>) => (
           <span className="text-[13px] text-text-primary">{info.getValue() as string}</span>
         ),
@@ -260,10 +260,10 @@ export function RequestsPage() {
             </Select>
             <Select value={policyFilter} onValueChange={setPolicyFilter}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="策略" />
+                <SelectValue placeholder="出口" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部策略</SelectItem>
+                <SelectItem value="all">全部出口</SelectItem>
                 {policies.map((p) => (
                   <SelectItem key={p} value={p}>{p}</SelectItem>
                 ))}
@@ -398,7 +398,7 @@ export function RequestsPage() {
                 </Section>
                 <Section title="路由">
                   <Row label="规则" value={selected.rule} mono />
-                  <Row label="策略" value={selected.policyName} />
+                  <Row label="出口" value={selected.policyName} />
                   <Row label="目标" value={selected.remoteAddress} mono />
                   <Row label="本地地址" value={selected.localAddress} mono />
                   {selected.processPath && <Row label="进程" value={selected.processPath} mono />}

@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, RefreshCw, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
+import { Drawer, DrawerBody, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/Drawer";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { policyLatencyView } from "@/lib/request";
+import { cn } from "@/lib/cn";
 import {
   useGroupSelectionsQuery,
   usePolicyGroupsQuery,
@@ -15,6 +17,20 @@ import {
   useTestGroupMutation,
 } from "./policies-queries";
 
+/**
+ * Policies (v0.2.1, T06/T07).
+ *
+ * The list page only shows Group Cards — a 24-node group never stretches the
+ * page. Clicking a card opens a right Drawer (≤520px) with:
+ *   - sticky header: group name, current selection, [测速全部] [刷新]
+ *   - independently scrolling body: per-policy rows (dot · name · type ·
+ *     latency badge with <100/100–250/>250/超时 grading)
+ *
+ * There is deliberately NO per-node "测试" button: /v1/policy_groups/test
+ * tests the whole group, so a per-row button would be a lie. "测速全部" in the
+ * header runs the group test, then test results are fetched once and cached
+ * 30s (no 15s polling loop).
+ */
 export function PoliciesPage() {
   const { client } = useSurgeClientState();
   const groups = usePolicyGroupsQuery();
@@ -23,102 +39,145 @@ export function PoliciesPage() {
   const selectPolicy = useSelectPolicyMutation();
   const testGroup = useTestGroupMutation();
 
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // Which group's drawer is open (null = closed).
+  const [drawerGroup, setDrawerGroup] = useState<string | null>(null);
   // Groups the user has tested this session — enables the test-results query
-  // (PROJECT_SPEC §6.3 latency grading, without polling before first use).
+  // (no polling before the first test).
   const [testedGroups, setTestedGroups] = useState<Set<string>>(() => new Set());
   const testResults = usePolicyTestResultsQuery(testedGroups.size > 0);
 
   if (!client) return <NoClientNotice page="Policies" />;
 
   const loading = groups.isLoading;
+  const drawer = drawerGroup ? groups.data?.find((g) => g.name === drawerGroup) : undefined;
 
-  const handleTest = (groupName: string) => {
+  const handleTestAll = (groupName: string) => {
     setTestedGroups((prev) => new Set(prev).add(groupName));
     testGroup.mutate(groupName);
   };
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-[26px] font-semibold text-text-primary">Policies</h1>
-          <p className="mt-0.5 text-sm text-text-secondary">策略组及其选项 · 延迟分级：&lt;100 绿 / 100–250 橙 / &gt;250 红</p>
-        </div>
+      <header>
+        <h1 className="text-[26px] font-semibold text-text-primary">Policies</h1>
+        <p className="mt-0.5 text-sm text-text-secondary">
+          策略组 · 点击卡片查看节点详情 · 延迟分级：&lt;100 绿 / 100–250 橙 / &gt;250 红
+        </p>
       </header>
 
       {loading ? (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-32 w-full" />
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {groups.data?.map((group) => {
-            const selected = selections.data?.[group.name];
-            const groupResults = testResults.data?.[group.name];
-            return (
-              <Card key={group.name} className="p-0">
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle>{group.name}</CardTitle>
-                  <Badge>{selected ?? "—"}</Badge>
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(expanded === group.name ? null : group.name)}
-                    className="flex w-full items-center justify-between rounded-sm border border-border bg-elevated/50 px-3 py-2 text-sm text-text-secondary hover:text-text-primary"
-                  >
-                    {expanded === group.name ? "收起策略" : "展开策略"}
-                    <span className="text-xs text-text-tertiary">{group.policies.length}</span>
-                  </button>
-
-                  {expanded === group.name && (
-                    <div className="mt-2 space-y-1">
-                      {group.policies.map((policyName) => {
-                        const isSelected = selected === policyName;
-                        const latency = policyLatencyView(groupResults?.[policyName]);
-                        return (
-                          <div
-                            key={policyName}
-                            className="flex items-center justify-between gap-2 rounded-sm px-2 py-1.5 hover:bg-elevated/60"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => selectPolicy.mutate({ group: group.name, policy: policyName })}
-                              disabled={selectPolicy.isPending}
-                              className="flex min-w-0 items-center gap-2 text-[13px] text-text-primary hover:text-accent"
-                            >
-                              <span className={`h-1.5 w-1.5 shrink-0 rounded-pill ${isSelected ? "bg-accent" : "bg-text-tertiary/40"}`} />
-                              <span className="truncate">{policyName}</span>
-                            </button>
-                            <div className="flex shrink-0 items-center gap-2">
-                              {testedGroups.has(group.name) && (
-                                <Badge variant={latency.tone} className="font-mono tabular-nums">
-                                  {latency.label}
-                                </Badge>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleTest(group.name)}
-                                disabled={testGroup.isPending}
-                              >
-                                {testGroup.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                测试
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+          {groups.data?.map((group) => (
+            <Card
+              key={group.name}
+              className="p-0 transition-colors duration-hover hover:border-accent/40"
+            >
+              <button
+                type="button"
+                onClick={() => setDrawerGroup(group.name)}
+                className="flex w-full flex-col gap-2.5 rounded-lg p-5 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-semibold text-text-primary">{group.name}</span>
+                  <Badge className="shrink-0">{selections.data?.[group.name] ?? "—"}</Badge>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 text-xs">
+                  <span className="shrink-0 text-text-tertiary">当前节点</span>
+                  <span className="min-w-0 truncate text-[13px] text-text-secondary">
+                    {selections.data?.[group.name] ?? "未选择"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-tertiary">节点数量</span>
+                  <span className="text-[13px] text-text-secondary">{group.policies.length}</span>
+                </div>
+                <div className="flex items-center justify-end gap-1 pt-1 text-xs text-accent">
+                  查看详情 <ArrowRight className="h-3.5 w-3.5" />
+                </div>
+              </button>
+            </Card>
+          ))}
+          {(groups.data?.length ?? 0) === 0 && !groups.isError && (
+            <p className="py-8 text-center text-sm text-text-tertiary">没有返回策略组。</p>
+          )}
         </div>
       )}
+
+      <Drawer open={!!drawerGroup} onOpenChange={(open) => { if (!open) setDrawerGroup(null); }}>
+        <DrawerContent side="right" className="w-[min(520px,100vw)]">
+          {drawer && (
+            <>
+              <DrawerHeader className="pr-12">
+                <div className="flex items-center justify-between gap-2">
+                  <DrawerTitle className="truncate">{drawer.name}</DrawerTitle>
+                  <Badge className="shrink-0">{selections.data?.[drawer.name] ?? "未选择"}</Badge>
+                </div>
+                <DrawerDescription>
+                  {drawer.policies.length} 个策略 · 当前 {selections.data?.[drawer.name] ?? "—"}
+                </DrawerDescription>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => handleTestAll(drawer.name)} disabled={testGroup.isPending}>
+                    {testGroup.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Zap className="h-3.5 w-3.5" />
+                    )}
+                    测速全部
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => testResults.refetch()}
+                    disabled={testResults.isFetching}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", testResults.isFetching && "animate-spin")} />
+                    刷新
+                  </Button>
+                </div>
+              </DrawerHeader>
+
+              <DrawerBody className="scrollbar-thin p-3">
+                {drawer.policies.map((policyName) => {
+                  const isSelected = selections.data?.[drawer.name] === policyName;
+                  const latency = policyLatencyView(testResults.data?.[drawer.name]?.[policyName]);
+                  const type = drawer.types[policyName];
+                  return (
+                    <button
+                      key={policyName}
+                      type="button"
+                      onClick={() => selectPolicy.mutate({ group: drawer.name, policy: policyName })}
+                      disabled={selectPolicy.isPending}
+                      className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left hover:bg-elevated/60"
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-pill",
+                          isSelected ? "bg-accent" : "bg-text-tertiary/40",
+                        )}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{policyName}</span>
+                      {type && <span className="shrink-0 font-mono text-[10px] text-text-tertiary">{type}</span>}
+                      {testedGroups.has(drawer.name) && (
+                        <Badge variant={latency.tone} className="shrink-0 font-mono tabular-nums">
+                          {latency.label}
+                        </Badge>
+                      )}
+                    </button>
+                  );
+                })}
+                {drawer.policies.length === 0 && (
+                  <p className="py-8 text-center text-sm text-text-tertiary">该策略组暂无节点。</p>
+                )}
+              </DrawerBody>
+            </>
+          )}
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

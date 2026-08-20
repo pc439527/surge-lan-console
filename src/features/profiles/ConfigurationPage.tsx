@@ -11,6 +11,8 @@ import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context"
 import { surgeKeys } from "@/lib/surge-keys";
 import { SurgeClient } from "@/api/surge-client";
 import type { ProfileInfo } from "@/api/types";
+import { surgeDarkTheme, surgeLightTheme } from "@/lib/codemirror-theme";
+import { useResolvedTheme } from "@/lib/theme";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 
 export function ConfigurationPage() {
@@ -25,6 +27,9 @@ export function ConfigurationPage() {
     enabled: !!surgeClient,
     staleTime: Infinity,
   });
+
+  // T12: follow Light/Dark/System so the editor never renders unreadable.
+  const resolvedTheme = useResolvedTheme();
 
   const reload = useMutation({
     mutationFn: () => surgeClient!.reloadProfile(),
@@ -69,9 +74,10 @@ export function ConfigurationPage() {
             <CodeMirror
               value={profileText}
               extensions={[StreamLanguage.define(properties)]}
-              height="480px"
+              // T12: height adapts to viewport (min 480px, max 760px).
+              height="clamp(480px, calc(100vh - 230px), 760px)"
               readOnly
-              theme="none"
+              theme={resolvedTheme === "dark" ? surgeDarkTheme : surgeLightTheme}
               basicSetup={{ lineNumbers: true, foldGutter: false }}
               style={{
                 fontSize: 12,

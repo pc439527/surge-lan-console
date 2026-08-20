@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   usePreferencesStore,
   type Appearance,
@@ -36,4 +36,30 @@ export function useThemeSync() {
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
   }, [appearance]);
+}
+
+/**
+ * Reactive resolved theme ("light" | "dark") for components that need the
+ * actual value (e.g. CodeMirror theme selection, T12). Tracks the store and
+ * live system changes, so editor themes follow Appearance switching.
+ */
+export function useResolvedTheme(): ResolvedTheme {
+  const appearance = usePreferencesStore((s) => s.appearance);
+  const canDetect =
+    typeof window !== "undefined" && typeof window.matchMedia === "function";
+  const [resolved, setResolved] = useState<ResolvedTheme>(() =>
+    canDetect ? resolveTheme(appearance) : "light",
+  );
+
+  useEffect(() => {
+    if (!canDetect) return;
+    setResolved(resolveTheme(appearance));
+    if (appearance !== "system") return;
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setResolved(resolveTheme("system"));
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [appearance, canDetect]);
+
+  return resolved;
 }

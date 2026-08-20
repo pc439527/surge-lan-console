@@ -107,8 +107,9 @@ export function DnsPage() {
         </div>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
+      {/* T10: desktop = list (flexible) + test (fixed 300–340px); <1360px stacks. */}
+      <div className="grid items-start gap-4 min-[1360px]:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
+        <Card className="min-w-0">
           <CardHeader className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex rounded-sm border border-border bg-surface p-0.5">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Eye, Loader2, TerminalSquare } from "lucide-react";
@@ -32,8 +32,18 @@ import {
 } from "@/components/ui/Select";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
+import { SurgeClient } from "@/api/surge-client";
+import { parseScriptsFromProfile } from "@/lib/profile-scripts";
 import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
+
+/** Unified script row — API data or the Configuration [Script] fallback (T11). */
+interface DisplayScript {
+  name: string;
+  type: string;
+  path?: string;
+  source: "api" | "profile";
+}
 
 /** Mock environments accepted by POST /v1/scripting/evaluate. */
 const MOCK_TYPES = [
@@ -59,6 +69,36 @@ export function ScriptsPage() {
     queryFn: () => surgeClient!.getScriptList(),
     enabled: !!surgeClient,
   });
+
+  // T11 fallback: API 返回 [] 并不等于「没有脚本」 — 配置文件的 [Script] 段
+  // 可能是真实的脚本来源（API 无脚本 ≠ 配置无脚本）。
+  const apiEmpty =
+    !scriptsQuery.isLoading && !scriptsQuery.isError && (scriptsQuery.data?.length ?? 0) === 0;
+  const profileScriptsQuery = useQuery({
+    queryKey: surgeKeys.profile(connectionId),
+    queryFn: async () => {
+      const profile = await surgeClient!.getCurrentProfile(false);
+      return parseScriptsFromProfile(SurgeClient.profileText(profile));
+    },
+    enabled: !!surgeClient && apiEmpty,
+    staleTime: 60_000,
+  });
+
+  const displayScripts = useMemo<DisplayScript[]>(() => {
+    const api = (scriptsQuery.data ?? []).map<DisplayScript>((s) => ({
+      name: s.name,
+      type: s.type,
+      path: s.path,
+      source: "api",
+    }));
+    if (api.length > 0) return api;
+    return (profileScriptsQuery.data ?? []).map<DisplayScript>((s) => ({
+      name: s.name,
+      type: s.type,
+      path: s.path,
+      source: "profile",
+    }));
+  }, [scriptsQuery.data, profileScriptsQuery.data]);
 
   const runCron = useMutation({
     mutationFn: (name: string) => surgeClient!.runCronScript(name),
@@ -102,10 +142,16 @@ export function ScriptsPage() {
             </div>
           ) : scriptsQuery.isError ? (
             <ErrorStateView error={scriptsQuery.error} api="/v1/scripting" compact onRetry={() => scriptsQuery.refetch()} />
-          ) : scriptsQuery.data?.length === 0 ? (
+          ) : apiEmpty && profileScriptsQuery.isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <p className="pt-1 text-center text-xs text-text-tertiary">API 无脚本 — 正在从配置文件 [Script] 段查找…</p>
+            </div>
+          ) : displayScripts.length === 0 ? (
             <DataEmpty
               title="没有发现脚本"
-              description="当前配置未启用 HTTP / Rule / DNS / Event / Cron 脚本，或该平台不支持脚本查询接口。"
+              description="API 与配置文件的 [Script] 段均未发现脚本 — 当前配置可能确实没有启用任何脚本。"
               compact
             />
           ) : (
@@ -116,17 +162,23 @@ export function ScriptsPage() {
                     <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">名称</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">类型</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">路径</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">来源</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {scriptsQuery.data?.map((script) => (
-                    <tr key={script.name + "-" + script.type} className="border-b border-border/50">
+                  {displayScripts.map((script) => (
+                    <tr key={script.name + "-" + script.type + "-" + script.source} className="border-b border-border/50">
                       <td className="px-3 py-2.5 text-[13px] font-medium text-text-primary">{script.name}</td>
                       <td className="px-3 py-2.5">
                         <Badge variant="muted" className="font-mono text-[11px]">{script.type}</Badge>
                       </td>
                       <td className="px-3 py-2.5 font-mono text-xs text-text-secondary">{script.path ?? "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant={script.source === "api" ? "info" : "muted"} className="font-mono text-[10px]">
+                          {script.source === "api" ? "API" : "Profile"}
+                        </Badge>
+                      </td>
                       <td className="px-3 py-2.5">
                         <div className="flex justify-end gap-1">
                           {script.type === "cron" ? (

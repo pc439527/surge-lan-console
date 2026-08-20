@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Activity, ArrowRight, Globe, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -20,6 +21,7 @@ import {
 } from "./dashboard-queries";
 import { useFeaturesQuery, useOutboundModeQuery } from "@/features/shared/queries";
 import { useGroupSelectionsQuery } from "@/features/policies/policies-queries";
+import { surgeKeys } from "@/lib/surge-keys";
 import { OutboundModeControl } from "./OutboundModeControl";
 import type { DisplayEvent } from "./dashboard-queries";
 
@@ -74,9 +76,35 @@ export function DashboardPage() {
   const events = useEventsQuery();
   const groups = usePolicyGroupsQuery();
   const features = useFeaturesQuery();
-  const groupNames = groups.data?.map((g) => g.name) ?? [];
-  const selections = useGroupSelectionsQuery(groupNames);
+
+  // T14: the dashboard only shows ≤8 groups — compute them first so the
+  // selections query never fires N requests for groups the page won't render.
+  const dashboardGroups = useMemo(() => {
+    const all = groups.data ?? [];
+    if (all.length === 0) return [];
+    const byName = new Map(all.map((g) => [g.name, g]));
+    const ordered: typeof all = [];
+    for (const name of PRIORITY_GROUPS) {
+      const g = byName.get(name);
+      if (g) ordered.push(g);
+    }
+    for (const g of all) {
+      if (!ordered.includes(g)) ordered.push(g);
+    }
+    return ordered.slice(0, MAX_DASHBOARD_GROUPS);
+  }, [groups.data]);
+  const dashboardGroupNames = useMemo(() => dashboardGroups.map((g) => g.name), [dashboardGroups]);
+  const selections = useGroupSelectionsQuery(dashboardGroupNames);
   const outboundModeQuery = useOutboundModeQuery();
+
+  // T15: DNS availability comes from /v1/dns — the Feature API has no DNS flag.
+  const dnsQuery = useQuery({
+    queryKey: surgeKeys.dns(connectionId),
+    queryFn: ({ signal }) => client!.getDnsCache(signal),
+    enabled: !!client && !missingKey,
+    staleTime: 60_000,
+    refetchInterval: false,
+  });
 
   // Rolling window for the chart (Fix 06): effects only, no setState in useMemo.
   const [trail, setTrail] = useState<{ time: number; upload: number; download: number }[]>([]);
@@ -121,22 +149,6 @@ export function DashboardPage() {
   }
 
   const loading = traffic.isLoading || active.isLoading;
-
-  // Important groups: priority order first, then remaining, capped at 8.
-  const dashboardGroups = (() => {
-    const all = groups.data ?? [];
-    if (all.length === 0) return [];
-    const byName = new Map(all.map((g) => [g.name, g]));
-    const ordered: typeof all = [];
-    for (const name of PRIORITY_GROUPS) {
-      const g = byName.get(name);
-      if (g) ordered.push(g);
-    }
-    for (const g of all) {
-      if (!ordered.includes(g)) ordered.push(g);
-    }
-    return ordered.slice(0, MAX_DASHBOARD_GROUPS);
-  })();
 
   // System status: uptime from traffic.startTime (normalized, Task 07).
   const uptimeMs = traffic.data?.startTime
@@ -191,7 +203,11 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2.5">
             <StatusRow label="模式" value={outboundModeQuery.data?.toUpperCase() ?? "—"} mono />
-            <StatusRow label="DNS" value={features.data ? "Active" : "—"} tone={features.data ? "success" : "muted"} />
+            <StatusRow
+              label="DNS API"
+              value={dnsQuery.isSuccess ? "Available" : dnsQuery.isError ? "Unavailable" : "—"}
+              tone={dnsQuery.isSuccess ? "success" : "muted"}
+            />
             {featureRows.map((row) => {
               const enabled = features.data?.[row.key];
               return (

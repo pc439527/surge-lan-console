@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
+import { useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
 import type { PolicyGroupTestResults } from "@/api/types";
 import { usePolicyGroupsQuery } from "@/features/shared/queries";
@@ -68,20 +68,25 @@ export function useSelectPolicyMutation() {
 }
 
 export function useTestGroupMutation() {
-  const client = useSurgeClient();
+  const { client, connectionId } = useSurgeClientState();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (group: string) => client!.testPolicyGroup(group),
-    onSuccess: (result) => {
-      toast.success(`测试完成：${result.available?.length ?? 0} 个策略可用`);
+    onSuccess: (result, group) => {
+      // v0.2.1 T07: POST test → invalidate → GET test_results once.
+      // No long-running 15s poll; results stay cached for 30s afterwards.
+      void queryClient.invalidateQueries({ queryKey: surgeKeys.policyTestResults(connectionId) });
+      toast.success(`测速完成：${group} 共 ${result.available?.length ?? 0} 个策略`);
     },
-    onError: () => toast.error("策略组测试失败"),
+    onError: () => toast.error("策略组测速失败"),
   });
 }
 
 /**
  * Per-policy latency after the last group test (PROJECT_SPEC §6.3).
- * Enabled only after the user has triggered at least one test, then kept
- * warm with a slow poll so the color grading stays fresh.
+ * Enabled only after the user has triggered at least one test; results are
+ * fetched once per test (via invalidation) and cached for 30s — the "刷新"
+ * button in the drawer refetches on demand.
  */
 export function usePolicyTestResultsQuery(enabled: boolean) {
   const { client, enabled: connEnabled, connectionId } = useEnabledClient();
@@ -89,6 +94,7 @@ export function usePolicyTestResultsQuery(enabled: boolean) {
     queryKey: surgeKeys.policyTestResults(connectionId),
     queryFn: ({ signal }) => client!.getPolicyTestResults(signal),
     enabled: connEnabled && enabled,
-    refetchInterval: 15_000,
+    staleTime: 30_000,
+    refetchInterval: false,
   });
 }

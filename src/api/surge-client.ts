@@ -6,7 +6,8 @@ import axios, {
 import { ENDPOINTS } from "./endpoints";
 import { SurgeError } from "./errors";
 import { z } from "zod";
-import { eventItemSchema, parseOrThrow, requestItemSchema, trafficSummarySchema } from "./schemas";
+import { parseOrThrow, requestItemSchema, trafficSummarySchema } from "./schemas";
+import { normalizeEvents } from "./normalize/events";
 import { normalizeRules } from "./normalize/rules";
 import type {
   DnsCacheEntry,
@@ -80,8 +81,15 @@ function classifyError(error: unknown): SurgeError {
     if (status === 401 || status === 403) {
       return new SurgeError("authentication", "API 密钥无效或请求未获授权。", { status });
     }
-    if (status === 404) {
+    // v0.2.1 T05 taxonomy: 404/405 → unsupported, 408 → timeout, 5xx → server-error.
+    if (status === 404 || status === 405) {
       return new SurgeError("unsupported", "当前 Surge 版本不支持该 API。", { status });
+    }
+    if (status === 408) {
+      return new SurgeError("timeout", "请求超时（HTTP 408）。", { status });
+    }
+    if (status !== undefined && status >= 500) {
+      return new SurgeError("server-error", `Surge API 服务返回错误（HTTP ${status}）。`, { status });
     }
     return new SurgeError("api", `Surge 返回错误（HTTP ${status}）。`, { status });
   }
@@ -315,15 +323,11 @@ export class SurgeClient {
   }
 
   // ── Events & Rules ────────────────────────────────────────────
-  /** GET /v1/events -> { events: [...] } */
+  /** GET /v1/events -> { events: [...] } (normalized — same parser Diagnostics uses, T01/T03). */
   async getEvents(signal?: AbortSignal): Promise<EventList> {
-    const raw = await this.get<EventList>(ENDPOINTS.events, undefined, signal);
-    const events = parseOrThrow(
-      z.array(eventItemSchema),
-      raw.events ?? [],
-      ENDPOINTS.events,
-    );
-    return { events };
+    const raw = await this.get<unknown>(ENDPOINTS.events, undefined, signal);
+    const normalized = normalizeEvents(raw);
+    return { events: normalized.events };
   }
 
   /** Convert raw event type (0/1/2) to a display level. */

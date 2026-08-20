@@ -116,8 +116,8 @@ export function ModulesPage() {
             </DialogTitle>
             <DialogDescription>
               {pendingToggle?.enabled
-                ? "这将安装并激活该模块。"
-                : "这将卸载并停用该模块。"}
+                ? "这将启用该模块。"
+                : "这将停用该模块。"}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

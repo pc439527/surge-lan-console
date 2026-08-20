@@ -75,6 +75,33 @@ export class MockSurgeClient {
     return { reachable: true, authenticated: true, latencyMs: 18 };
   }
 
+  /**
+   * Raw endpoint probe for API Diagnostics (T01/T04) — the same surface
+   * SurgeClient.probeEndpoint exposes, fed from the in-memory mock so the
+   * Diagnostics page works in demo mode too.
+   */
+  async probeEndpoint(
+    endpoint: string,
+  ): Promise<{ status: number | null; latencyMs: number | null; raw: unknown; error?: unknown }> {
+    const started = performance.now();
+    const responses: Record<string, unknown> = {
+      "/v1/outbound": { mode: this.outboundMode },
+      "/v1/traffic": await this.getTraffic(),
+      "/v1/requests/recent": { requests: await this.getRecentRequests() },
+      "/v1/policy_groups": await this.getPolicyGroups(),
+      "/v1/rules": await this.getRules(),
+      "/v1/dns": await this.getDnsCache(),
+      "/v1/modules": await this.getModules(),
+      "/v1/scripting": await this.getScripts(),
+      "/v1/events": await this.getEvents(),
+    };
+    return {
+      status: 200,
+      latencyMs: Math.round(performance.now() - started),
+      raw: responses[endpoint] ?? null,
+    };
+  }
+
   async getFeatures(): Promise<FeatureState> {
     return { ...this.features };
   }

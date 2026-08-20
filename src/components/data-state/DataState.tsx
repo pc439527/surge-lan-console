@@ -105,7 +105,8 @@ export function DataUnsupported({
       </div>
       <p className="text-sm font-medium text-text-primary">{title}</p>
       <p className="max-w-sm text-xs text-text-tertiary">
-        {description ?? "Apple TV / tvOS 可能不支持该 API — 这属于平台限制，不是程序错误。"}
+        {description ??
+          "API 返回了无法识别的数据结构，或当前平台不支持该接口 — 请到「设置 → API Diagnostics」查看 Raw Structure。"}
       </p>
     </div>
   );
@@ -180,6 +181,16 @@ export function ErrorStateView({ error, api, onRetry, compact }: { error: unknow
       case "timeout":
       case "browser-security":
         return <DataNetworkError compact={compact} error={error} onRetry={onRetry} />;
+      case "server-error":
+        return (
+          <DataError
+            compact={compact}
+            api={api}
+            error={error}
+            onRetry={onRetry}
+            title="Surge API 服务暂时不可用"
+          />
+        );
       case "api":
         return <DataError compact={compact} api={api} error={error} onRetry={onRetry} />;
     }

@@ -89,9 +89,10 @@ export interface DisplayEvent {
 }
 
 function normalizeEvent(type: number, content: string, date: string, id: string): DisplayEvent {
+  const time = new Date(date).getTime();
   return {
     id,
-    time: new Date(date).getTime(),
+    time: Number.isNaN(time) ? 0 : time,
     level: SurgeClient.eventLevel(type),
     message: content,
   };
@@ -118,6 +119,8 @@ export function useEventsQuery() {
 export interface DisplayPolicyGroup {
   name: string;
   policies: string[];
+  /** policyName → typeDescription (e.g. "ss", "select", "direct") — from /v1/policy_groups. */
+  types: Record<string, string>;
 }
 
 export function usePolicyGroupsQuery() {
@@ -130,6 +133,7 @@ export function usePolicyGroupsQuery() {
       return Object.entries(raw ?? {}).map(([name, policies]) => ({
         name,
         policies: (policies ?? []).map((p) => p.name),
+        types: Object.fromEntries((policies ?? []).map((p) => [p.name, p.typeDescription ?? ""])),
       }));
     },
     enabled,
