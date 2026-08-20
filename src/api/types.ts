@@ -80,7 +80,12 @@ export interface GroupSelection {
 
 /** POST /v1/policy_groups/test -> {"available": [...]} */
 export interface GroupTestResult {
+  /** Reachable policy names derived from the POST response. */
   available: string[];
+  /** Per-policy latency normalized from Surge's `receive` field. */
+  results: Record<string, PolicyTestEntry>;
+  /** URL-test groups may select and return a winner automatically. */
+  winner?: string;
 }
 
 /**
@@ -88,6 +93,15 @@ export interface GroupTestResult {
  * { [groupName]: { [policyName]: { ok, latency } } }
  * Latency may be a number (ms) or a "Timeout"-like string on older Surge builds.
  */
+export interface PolicyBenchmarkResult {
+  lastTestScoreInMS: number;
+  lastTestDate?: number;
+  lastTestErrorMessage?: string | null;
+  testing?: number;
+}
+
+export type PolicyBenchmarkResults = Record<string, PolicyBenchmarkResult>;
+
 export interface PolicyTestEntry {
   ok?: boolean;
   latency?: number | string | null;

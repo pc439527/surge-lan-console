@@ -152,8 +152,9 @@ export class MockSurgeClient {
   };
 
   async testPolicyGroup(groupName: string): Promise<GroupTestResult> {
-    const group = POLICY_GROUPS_DATA[groupName];
-    return { available: group?.map((p) => p.name) ?? [] };
+    const allResults = await this.getPolicyTestResults();
+    const results = allResults[groupName] ?? {};
+    return { available: Object.keys(results).filter((name) => results[name].ok !== false), results };
   }
 
   async testPolicies(): Promise<void> {

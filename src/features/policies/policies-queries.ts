@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
-import type { PolicyGroupTestResults } from "@/api/types";
+import type { Policy, PolicyGroupTestResults, PolicyTestEntry } from "@/api/types";
 import { usePolicyGroupsQuery } from "@/features/shared/queries";
+import { findFastestPolicy } from "./fastest-policy";
 
 export { usePolicyGroupsQuery };
 
@@ -71,14 +72,74 @@ export function useTestGroupMutation() {
   const { client, connectionId } = useSurgeClientState();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (group: string) => client!.testPolicyGroup(group),
-    onSuccess: (result, group) => {
-      // v0.2.1 T07: POST test → invalidate → GET test_results once.
-      // No long-running 15s poll; results stay cached for 30s afterwards.
-      void queryClient.invalidateQueries({ queryKey: surgeKeys.policyTestResults(connectionId) });
-      toast.success(`测速完成：${group} 共 ${result.available?.length ?? 0} 个策略`);
+    mutationFn: async ({ group, policies }: { group: string; policies: Policy[] }) => {
+      const result = await client!.testPolicyGroup(group);
+      if (Object.values(result.results).some((entry) => entry.ok && entry.latency == null)) {
+        try {
+          const benchmarks = await client!.getPolicyBenchmarkResults();
+          for (const policy of policies) {
+            if (!policy.lineHash) continue;
+            const benchmark = benchmarks[policy.lineHash];
+            if (!benchmark) continue;
+            const score = benchmark.lastTestScoreInMS;
+            const declaredReachable = result.available.includes(policy.name);
+            if (typeof score === "number" && Number.isFinite(score) && score > 0 &&
+                (benchmark.lastTestErrorMessage == null || declaredReachable)) {
+              result.results[policy.name] = { ok: true, latency: Math.round(score) };
+            } else if (!declaredReachable) {
+              result.results[policy.name] = { ok: false, latency: "Timeout" };
+            }
+          }
+          result.available = Object.keys(result.results).filter((name) => result.results[name].ok === true);
+        } catch {
+          // Older platforms have no benchmark endpoint; availability still remains useful.
+        }
+      }
+      return result;
     },
-    onError: () => toast.error("策略组测速失败"),
+    onSuccess: (result, { group }) => {
+      queryClient.setQueryData<PolicyGroupTestResults>(
+        surgeKeys.policyTestResults(connectionId),
+        (previous) => ({ ...(previous ?? {}), [group]: result.results }),
+      );
+      // The POST response itself contains the per-policy `receive` timings.
+      // Several Surge versions do not expose /test_results at all.
+      toast.success(`测速完成：${group} · ${result.available.length} 个节点可达`);
+    },
+    onError: () => toast.error("策略组测速失败，无法自动选择"),
+  });
+}
+
+export function useSelectFastestPolicyMutation() {
+  const { client, connectionId } = useSurgeClientState();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      group,
+      policies,
+      results,
+    }: {
+      group: string;
+      policies: string[];
+      results: Record<string, PolicyTestEntry> | undefined;
+    }) => {
+      const fastest = findFastestPolicy(policies, results);
+      if (!fastest) throw new Error("NO_REACHABLE_POLICY");
+      await client!.selectPolicy(group, fastest.name);
+      return { group, ...fastest };
+    },
+    onSuccess: ({ group, name, latencyMs }) => {
+      queryClient.setQueriesData<Record<string, string> | undefined>(
+        { queryKey: selectionsPrefix(connectionId), type: "all" },
+        (prev) => ({ ...(prev ?? {}), [group]: name }),
+      );
+      toast.success(`已选择最快节点：${name}（${Math.round(latencyMs)}ms）`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error && error.message === "NO_REACHABLE_POLICY"
+        ? "没有可用节点：超时节点已排除"
+        : "自动选择最快节点失败");
+    },
   });
 }
 
@@ -88,12 +149,14 @@ export function useTestGroupMutation() {
  * fetched once per test (via invalidation) and cached for 30s — the "刷新"
  * button in the drawer refetches on demand.
  */
-export function usePolicyTestResultsQuery(enabled: boolean) {
-  const { client, enabled: connEnabled, connectionId } = useEnabledClient();
+export function usePolicyTestResultsQuery() {
+  const { client, connectionId } = useEnabledClient();
   return useQuery<PolicyGroupTestResults>({
     queryKey: surgeKeys.policyTestResults(connectionId),
     queryFn: ({ signal }) => client!.getPolicyTestResults(signal),
-    enabled: connEnabled && enabled,
+    // Results are populated directly by the test mutation. Keep this query
+    // disabled to avoid replacing valid POST results with an unsupported GET.
+    enabled: false,
     staleTime: 30_000,
     refetchInterval: false,
   });

@@ -73,20 +73,21 @@ export function ScriptsPage() {
   const scriptsQuery = useQuery({
     queryKey: surgeKeys.scripts(connectionId),
     queryFn: () => surgeClient!.getScriptList(),
-    enabled: !!surgeClient && !capUnsupported,
+    enabled: !!surgeClient,
   });
 
   // T11 fallback: API 返回 [] 并不等于「没有脚本」 — 配置文件的 [Script] 段
   // 可能是真实的脚本来源（API 无脚本 ≠ 配置无脚本）。
   const apiEmpty =
     !scriptsQuery.isLoading && !scriptsQuery.isError && (scriptsQuery.data?.length ?? 0) === 0;
+  const needsProfileFallback = scriptsQuery.isError || apiEmpty;
   const profileScriptsQuery = useQuery({
     queryKey: surgeKeys.profile(connectionId),
     queryFn: async () => {
       const profile = await surgeClient!.getCurrentProfile(false);
       return parseScriptsFromProfile(SurgeClient.profileText(profile));
     },
-    enabled: !!surgeClient && apiEmpty,
+    enabled: !!surgeClient && needsProfileFallback,
     staleTime: 60_000,
   });
 
@@ -136,9 +137,7 @@ export function ScriptsPage() {
         </p>
       </header>
 
-      {capUnsupported ? (
-        <CapabilityNotice feature="scripts" api="/v1/scripting" />
-      ) : (
+      {capUnsupported && scriptsQuery.isError && <CapabilityNotice feature="scripts" api="/v1/scripting" />}
       <Card>
         <CardHeader>
           <CardTitle>全部脚本</CardTitle>
@@ -149,14 +148,14 @@ export function ScriptsPage() {
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
             </div>
-          ) : scriptsQuery.isError ? (
-            <ErrorStateView error={scriptsQuery.error} api="/v1/scripting" compact onRetry={() => scriptsQuery.refetch()} />
-          ) : apiEmpty && profileScriptsQuery.isLoading ? (
+          ) : needsProfileFallback && profileScriptsQuery.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
               <p className="pt-1 text-center text-xs text-text-tertiary">API 无脚本 — 正在从配置文件 [Script] 段查找…</p>
             </div>
+          ) : needsProfileFallback && profileScriptsQuery.isError ? (
+            <ErrorStateView error={profileScriptsQuery.error} api="/v1/profiles/current" compact onRetry={() => profileScriptsQuery.refetch()} />
           ) : displayScripts.length === 0 ? (
             <DataEmpty
               title="没有发现脚本"
@@ -215,7 +214,6 @@ export function ScriptsPage() {
           )}
         </CardContent>
       </Card>
-      )}
 
       <Drawer open={viewing !== null} onOpenChange={(open) => !open && setViewing(null)}>
         <DrawerContent side="right">

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Plus, Settings2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
@@ -15,13 +16,14 @@ import { useConnectionStore } from "@/stores/connection-store";
 
 /** Phase 03 UI — full CRUD lands in Phase 05. */
 export function ConnectionSwitcher() {
+  const [open, setOpen] = useState(false);
   const connections = useConnectionStore((s) => s.connections);
   const activeId = useConnectionStore((s) => s.activeConnectionId);
   const setActive = useConnectionStore((s) => s.setActiveConnection);
   const active = connections.find((c) => c.id === activeId) ?? null;
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="secondary" size="sm" className="max-w-[220px]">
           <span className={cn("h-2 w-2 shrink-0 rounded-pill", active ? "bg-success" : "bg-text-tertiary/50")} />
@@ -42,7 +44,7 @@ export function ConnectionSwitcher() {
             <button
               key={conn.id}
               type="button"
-              onClick={() => setActive(conn.id)}
+              onClick={() => { setActive(conn.id); setOpen(false); }}
               className={cn(
                 "flex w-full items-center gap-3 rounded-sm px-3 py-2.5 text-left outline-none transition-colors duration-hover focus-visible:ring-2 focus-visible:ring-accent/50",
                 conn.id === activeId ? "bg-accent/12" : "hover:bg-surface",

@@ -62,6 +62,7 @@ describe("policyLatencyView (§6.3 grading)", () => {
       tone: "muted",
       label: "超时",
     });
+    expect(policyLatencyView({ ok: true, latency: null })).toEqual({ tone: "success", label: "可达" });
     expect(policyLatencyView(undefined)).toEqual({ tone: "muted", label: "—" });
   });
 });

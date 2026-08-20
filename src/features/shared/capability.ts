@@ -22,10 +22,14 @@ import { surgeKeys } from "@/lib/surge-keys";
 export function useCapabilitiesQuery() {
   const { client, missingKey, connectionId, connection } = useSurgeClientState();
   return useQuery<CapabilityReport>({
-    queryKey: surgeKeys.capability(connectionId, connection?.platform),
+    queryKey: surgeKeys.capability(
+      connectionId,
+      connection?.platform,
+      connection ? `${connection.protocol}://${connection.host}:${connection.port}|proxy:${connection.useProxy ? 1 : 0}` : undefined,
+    ),
     queryFn: ({ signal }) => probeCapabilities(client!, connection?.platform, signal),
     enabled: !!client && !missingKey,
-    staleTime: 5 * 60_000,
+    staleTime: 30_000,
     refetchInterval: false,
     gcTime: 15 * 60_000,
   });

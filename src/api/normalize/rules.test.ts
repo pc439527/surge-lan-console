@@ -11,6 +11,15 @@ describe("normalizeRules", () => {
     expect(rules[0].type).toBe("RULE-SET");
   });
 
+  it("parses real Surge string rules from an envelope", () => {
+    const rules = normalizeRules({ rules: [
+      "DOMAIN-WILDCARD,*.example.com,DIRECT,extended-matching // 飞牛OS",
+      "FINAL,Proxy",
+    ] });
+    expect(rules[0]).toMatchObject({ type: "DOMAIN-WILDCARD", content: "*.example.com", policy: "DIRECT" });
+    expect(rules[1]).toMatchObject({ type: "FINAL", policy: "Proxy" });
+  });
+
   it("accepts an envelope { rules: [...] }", () => {
     const rules = normalizeRules({ rules: [{ type: "DOMAIN", content: "x.com", policy: "Proxy" }] });
     expect(rules).toHaveLength(1);

@@ -66,6 +66,7 @@ interface MappedRule {
 }
 
 function mapRuleRow(item: unknown): MappedRule {
+  if (typeof item === "string") return mapStringRule(item);
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return { ok: false, rule: { raw: item } };
   }
@@ -76,6 +77,21 @@ function mapRuleRow(item: unknown): MappedRule {
   // Recognized = at least one real value (empty strings don't count).
   const ok = hasValue(type) || hasValue(content) || hasValue(policy);
   return { ok, rule: { type, content, policy, raw: rec } };
+}
+
+function mapStringRule(raw: string): MappedRule {
+  const withoutComment = raw.split(/\s+\/\//, 1)[0].trim();
+  if (!withoutComment) return { ok: false, rule: { raw } };
+  const parts = withoutComment.split(",").map((part) => part.trim());
+  const type = parts[0] || undefined;
+  if (!type) return { ok: false, rule: { raw } };
+  if (type.toUpperCase() === "FINAL" || type.toUpperCase() === "MATCH") {
+    return { ok: true, rule: { type, policy: parts[1], raw } };
+  }
+  return {
+    ok: true,
+    rule: { type, content: parts[1], policy: parts[2], raw },
+  };
 }
 
 function pickString(rec: Record<string, unknown>, keys: string[]): string | undefined {

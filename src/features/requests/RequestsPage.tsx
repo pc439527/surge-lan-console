@@ -7,7 +7,7 @@ import {
   getFilteredRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Pause, Play, Search, X } from "lucide-react";
+import { Check, Clipboard, Pause, Play, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -36,6 +36,7 @@ import { requestProtocol } from "@/lib/request";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { useRecentRequestsQuery } from "@/features/shared/queries";
+import { buildRequestTimingWaterfall } from "./request-timing";
 
 type StatusTone = "success" | "warning" | "danger" | "muted" | "info" | "purple";
 
@@ -296,7 +297,14 @@ export function RequestsPage() {
             )}
           </div>
 
-          {requestsQuery.isLoading ? (
+          {requestsQuery.isError ? (
+            <div className="rounded-sm border border-danger/30 bg-danger/5 p-6 text-center">
+              <p className="text-sm font-medium text-danger">请求记录加载失败</p>
+              <Button className="mt-3" size="sm" variant="secondary" onClick={() => requestsQuery.refetch()}>
+                重试
+              </Button>
+            </div>
+          ) : requestsQuery.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
@@ -385,50 +393,7 @@ export function RequestsPage() {
             <DrawerDescription>{selected ? hostOf(selected.URL) : ""}</DrawerDescription>
           </DrawerHeader>
           <DrawerBody>
-            {selected && (
-              <div className="space-y-5">
-                <Section title="概览">
-                  <Row label="时间" value={formatMsTimestamp(normalizeEpoch(selected.startDate) ?? NaN)} />
-                  <Row label="域名" value={hostOf(selected.URL)} />
-                  <Row label="URL" value={selected.URL} mono />
-                  <Row label="方法" value={selected.method} />
-                  <Row label="协议" value={requestProtocol(selected.URL)} mono />
-                  <Row label="状态" value={selected.status ?? "—"} />
-                  <Row label="来源" value={`${selected.sourceAddress}:${selected.sourcePort}`} mono />
-                </Section>
-                <Section title="路由">
-                  <Row label="规则" value={selected.rule} mono />
-                  <Row label="出口" value={selected.policyName} />
-                  <Row label="目标" value={selected.remoteAddress} mono />
-                  <Row label="本地地址" value={selected.localAddress} mono />
-                  {selected.processPath && <Row label="进程" value={selected.processPath} mono />}
-                </Section>
-                <Section title="网络">
-                  <Row label="耗时" value={formatDuration(normalizeDurationMs(selected.startDate, selected.completedDate))} />
-                  <Row label="上传" value={formatBytes(selected.outBytes ?? 0)} />
-                  <Row label="下载" value={formatBytes(selected.inBytes ?? 0)} />
-                  {selected.timingRecords && selected.timingRecords.length > 0 && (
-                    <div className="mt-1 space-y-1">
-                      {selected.timingRecords.map((t, i) => (
-                        <div key={i} className="flex items-center justify-between gap-4">
-                          <span className="text-xs text-text-secondary">{t.name}</span>
-                          <span className="font-mono text-xs text-text-primary tabular-nums">
-                            {formatDuration(t.durationInMillisecond)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Section>
-                {selected.requestHeader && (
-                  <Section title="请求头">
-                    <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-surface/60 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
-                      {selected.requestHeader}
-                    </pre>
-                  </Section>
-                )}
-              </div>
-            )}
+            {selected && <RequestDetails request={selected} />}
           </DrawerBody>
         </DrawerContent>
       </Drawer>
@@ -436,6 +401,96 @@ export function RequestsPage() {
   );
 }
 
+export function RequestDetails({ request }: { request: RequestItem }) {
+  const [copyState, setCopyState] = useState<"url" | "headers" | "error" | null>(null);
+  const timing = buildRequestTimingWaterfall(request);
+
+  const copy = async (kind: "url" | "headers", value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyState(kind);
+    } catch {
+      setCopyState("error");
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <Section title="概览">
+        <Row label="时间" value={formatMsTimestamp(normalizeEpoch(request.startDate) ?? NaN)} />
+        <Row label="域名" value={hostOf(request.URL)} />
+        <CopyRow label="URL" value={request.URL} copied={copyState === "url"} onCopy={() => copy("url", request.URL)} />
+        <Row label="方法" value={request.method} />
+        <Row label="协议" value={requestProtocol(request.URL)} mono />
+        <Row label="状态" value={request.status ?? "—"} />
+        <Row label="来源" value={`${request.sourceAddress}:${request.sourcePort}`} mono />
+      </Section>
+      <Section title="路由">
+        <Row label="规则" value={request.rule} mono />
+        <Row label="出口" value={request.policyName} />
+        <Row label="目标" value={request.remoteAddress} mono />
+        <Row label="本地地址" value={request.localAddress} mono />
+        {request.processPath && <Row label="进程" value={request.processPath} mono />}
+      </Section>
+      <Section title="网络">
+        <Row label="总耗时" value={formatDuration(normalizeDurationMs(request.startDate, request.completedDate))} />
+        <Row label="连接建立" value={formatDuration(normalizeDurationMs(request.startDate, request.setupCompletedDate))} />
+        <Row label="上传" value={formatBytes(request.outBytes ?? 0)} />
+        <Row label="下载" value={formatBytes(request.inBytes ?? 0)} />
+      </Section>
+      <Section title="Timing Waterfall">
+        {timing.phases.length > 0 ? (
+          <div className="space-y-2" aria-label="请求连接阶段瀑布图">
+            {timing.phases.map((phase, index) => (
+              <div key={`${phase.name}-${index}`} className="grid grid-cols-[7rem_1fr_4rem] items-center gap-2">
+                <span className="truncate text-xs text-text-secondary" title={phase.name}>{phase.name}</span>
+                <div className="relative h-2.5 overflow-hidden rounded-pill bg-elevated" aria-hidden="true">
+                  <span
+                    className="absolute h-full rounded-pill bg-accent"
+                    style={{ left: `${phase.offsetPercent}%`, width: `${Math.min(phase.widthPercent, 100 - phase.offsetPercent)}%` }}
+                  />
+                </div>
+                <span className="text-right font-mono text-[11px] tabular-nums text-text-primary">
+                  {formatDuration(phase.durationMs)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-text-tertiary">此请求没有可用的连接阶段数据。</p>
+        )}
+      </Section>
+      {request.requestHeader && (
+        <Section title="请求头">
+          <div className="mb-2 flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => copy("headers", request.requestHeader ?? "")}>
+              {copyState === "headers" ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+              {copyState === "headers" ? "已复制" : "复制请求头"}
+            </Button>
+          </div>
+          <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-surface/60 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+            {request.requestHeader}
+          </pre>
+        </Section>
+      )}
+      <p className="min-h-4 text-xs text-danger" aria-live="polite">
+        {copyState === "error" ? "复制失败，请检查浏览器剪贴板权限。" : ""}
+      </p>
+    </div>
+  );
+}
+
+function CopyRow({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="shrink-0 text-xs text-text-secondary">{label}</span>
+      <span className="min-w-0 flex-1 break-all text-right font-mono text-xs text-text-primary">{value}</span>
+      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" aria-label="复制 URL" onClick={onCopy}>
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+      </Button>
+    </div>
+  );
+}
 function hostOf(url: string): string {
   try {
     return new URL(url).host;

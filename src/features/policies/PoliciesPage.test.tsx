@@ -13,16 +13,24 @@ function fakeClient() {
   return {
     getPolicyGroups: vi.fn().mockResolvedValue({
       Proxy: [
-        { name: "HK 01", typeDescription: "ss" },
-        { name: "HK 02", typeDescription: "ss" },
-        { name: "JP Tokyo", typeDescription: "ss" },
+        { name: "HK 01", typeDescription: "ss", lineHash: "h1" },
+        { name: "HK 02", typeDescription: "ss", lineHash: "h2" },
+        { name: "JP Tokyo", typeDescription: "ss", lineHash: "h3" },
       ],
       Final: [{ name: "DIRECT", typeDescription: "direct" }],
     }),
     getGroupSelection: vi.fn().mockResolvedValue("HK 01"),
     getPolicyTestResults: vi.fn().mockResolvedValue({}),
     selectPolicy: vi.fn().mockResolvedValue(undefined),
-    testPolicyGroup: vi.fn().mockResolvedValue({ available: ["HK 01", "HK 02", "JP Tokyo"] }),
+    testPolicyGroup: vi.fn().mockResolvedValue({
+      available: ["HK 01"],
+      results: { "HK 01": { ok: true, latency: null } },
+    }),
+    getPolicyBenchmarkResults: vi.fn().mockResolvedValue({
+      h1: { lastTestScoreInMS: 42, lastTestErrorMessage: null },
+      h2: { lastTestScoreInMS: 61, lastTestErrorMessage: null },
+      h3: { lastTestScoreInMS: -1, lastTestErrorMessage: "Timeout" },
+    }),
   } as unknown as SurgeClient;
 }
 
@@ -67,7 +75,7 @@ describe("PoliciesPage (T06/T07)", () => {
 
     // Drawer header actions.
     expect(screen.getByRole("button", { name: /测速全部/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /刷新/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /重新测速/ })).toBeInTheDocument();
 
     // All nodes listed inside the drawer ("HK 01" also exists on the card badge).
     expect((await screen.findAllByText("HK 01")).length).toBeGreaterThan(0);

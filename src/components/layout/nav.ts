@@ -6,6 +6,7 @@ import {
   GitBranch,
   Globe,
   ListOrdered,
+  Network,
   Plug,
   ScrollText,
   Settings,
@@ -32,7 +33,10 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
   {
     title: "概览",
-    items: [{ to: "/", label: "仪表盘", icon: Gauge }],
+    items: [
+      { to: "/", label: "仪表盘", icon: Gauge },
+      { to: "/fleet", label: "Fleet Console", icon: Network },
+    ],
   },
   {
     title: "网络",

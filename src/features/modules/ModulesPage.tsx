@@ -41,7 +41,7 @@ export function ModulesPage() {
   const modulesQuery = useQuery({
     queryKey: surgeKeys.modules(connectionId),
     queryFn: () => surgeClient!.getModuleList(),
-    enabled: !!surgeClient && !capUnsupported,
+    enabled: !!surgeClient,
   });
 
   const toggle = useMutation({
@@ -75,10 +75,7 @@ export function ModulesPage() {
         <p className="mt-0.5 text-sm text-text-secondary">已安装与可用模块</p>
       </header>
 
-      {capUnsupported ? (
-        <CapabilityNotice feature="modules" api="/v1/modules" />
-      ) : (
-        <>
+      {capUnsupported && modulesQuery.isError && <CapabilityNotice feature="modules" api="/v1/modules" />}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
         <Input ref={searchRef} className="pl-9" placeholder="搜索模块..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -117,8 +114,6 @@ export function ModulesPage() {
           )}
         </CardContent>
       </Card>
-        </>
-      )}
 
       <Dialog open={pendingToggle !== null} onOpenChange={(open) => !open && setPendingToggle(null)}>
         <DialogContent>

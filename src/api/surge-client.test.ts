@@ -135,6 +135,43 @@ describe("SurgeClient", () => {
     expect(JSON.parse(mock.history.post[0].data)).toEqual({ group_name: "Proxy", policy: "HK 02" });
   });
 
+  it("normalizes policy test receive timings from the POST response", async () => {
+    mock.onPost("/v1/policy_groups/test").reply(200, {
+      "HK 01": { tcp: 12, receive: 48.4 },
+      "HK 02": { tcp: 15 },
+    });
+    await expect(client.testPolicyGroup("Proxy")).resolves.toEqual({
+      available: ["HK 01"],
+      results: {
+        "HK 01": { ok: true, latency: 48 },
+        "HK 02": { ok: false, latency: "Timeout" },
+      },
+    });
+  });
+
+  it("keeps available-only nodes reachable without inventing latency", async () => {
+    mock.onPost("/v1/policy_groups/test").reply(200, { available: ["HK 01", "HK 02"] });
+    await expect(client.testPolicyGroup("Proxy")).resolves.toEqual({
+      available: ["HK 01", "HK 02"],
+      results: {
+        "HK 01": { ok: true, latency: null },
+        "HK 02": { ok: true, latency: null },
+      },
+    });
+  });
+
+  it("normalizes wrapped URL-test results and winner", async () => {
+    mock.onPost("/v1/policy_groups/test").reply(200, {
+      winner: "HK 02",
+      results: [{ data: { "HK 02": { receive: 35 } } }],
+    });
+    await expect(client.testPolicyGroup("Proxy")).resolves.toEqual({
+      available: ["HK 02"],
+      results: { "HK 02": { ok: true, latency: 35 } },
+      winner: "HK 02",
+    });
+  });
+
   it("flushes DNS cache", async () => {
     mock.onPost("/v1/dns/flush").reply(200, {});
     await client.flushDns();

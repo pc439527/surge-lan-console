@@ -9,6 +9,9 @@ const DashboardPage = lazy(() =>
 const ConnectionsPage = lazy(() =>
   import("@/features/connection/ConnectionsPage").then((m) => ({ default: m.ConnectionsPage })),
 );
+const FleetPage = lazy(() =>
+  import("@/features/fleet/FleetPage").then((m) => ({ default: m.FleetPage })),
+);
 const PoliciesPage = lazy(() =>
   import("@/features/policies/PoliciesPage").then((m) => ({ default: m.PoliciesPage })),
 );
@@ -63,6 +66,7 @@ export const router = createBrowserRouter([
       { path: "scripts", element: page(<ScriptsPage />) },
       { path: "configuration", element: page(<ConfigurationPage />) },
       { path: "events", element: page(<EventsPage />) },
+      { path: "fleet", element: page(<FleetPage />) },
       { path: "connections", element: page(<ConnectionsPage />) },
       { path: "settings", element: page(<SettingsPage />) },
       { path: "settings/diagnostics", element: page(<DiagnosticsPage />) },

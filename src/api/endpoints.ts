@@ -9,6 +9,7 @@ export const ENDPOINTS = {
   policies: "/v1/policies",
   policyDetail: "/v1/policies/detail",
   policiesTest: "/v1/policies/test",
+  policyBenchmarkResults: "/v1/policies/benchmark_results",
   policyGroups: "/v1/policy_groups",
   policyGroupsTestResults: "/v1/policy_groups/test_results",
   policyGroupsSelect: "/v1/policy_groups/select",

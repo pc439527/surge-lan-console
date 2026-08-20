@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, Loader2, RefreshCw, Zap } from "lucide-react";
+import { ArrowRight, CheckCircle2, Gauge, Loader2, RefreshCw, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -14,9 +14,11 @@ import {
   useGroupSelectionsQuery,
   usePolicyGroupsQuery,
   usePolicyTestResultsQuery,
+  useSelectFastestPolicyMutation,
   useSelectPolicyMutation,
   useTestGroupMutation,
 } from "./policies-queries";
+import { findFastestPolicy } from "./fastest-policy";
 
 /**
  * Policies (v0.2.1, T06/T07).
@@ -38,6 +40,7 @@ export function PoliciesPage() {
   const groupNames = groups.data?.map((g) => g.name) ?? [];
   const selections = useGroupSelectionsQuery(groupNames);
   const selectPolicy = useSelectPolicyMutation();
+  const selectFastest = useSelectFastestPolicyMutation();
   const testGroup = useTestGroupMutation();
 
   // Which group's drawer is open (null = closed).
@@ -45,7 +48,7 @@ export function PoliciesPage() {
   // Groups the user has tested this session — enables the test-results query
   // (no polling before the first test).
   const [testedGroups, setTestedGroups] = useState<Set<string>>(() => new Set());
-  const testResults = usePolicyTestResultsQuery(testedGroups.size > 0);
+  const testResults = usePolicyTestResultsQuery();
 
   if (!client) return <NoClientNotice page="Policies" />;
 
@@ -53,8 +56,16 @@ export function PoliciesPage() {
   const drawer = drawerGroup ? groups.data?.find((g) => g.name === drawerGroup) : undefined;
 
   const handleTestAll = (groupName: string) => {
-    setTestedGroups((prev) => new Set(prev).add(groupName));
-    testGroup.mutate(groupName);
+    selectFastest.reset();
+    const model = groups.data?.find((group) => group.name === groupName);
+    const policies = (model?.policies ?? []).map((name) => ({
+      name,
+      typeDescription: model?.types[name] ?? "",
+      lineHash: model?.lineHashes[name],
+    }));
+    testGroup.mutate({ group: groupName, policies }, {
+      onSuccess: () => setTestedGroups((prev) => new Set(prev).add(groupName)),
+    });
   };
 
   /** 某策略组测速后的最佳（最低）延迟与可达节点数；未测速返回 null。 */
@@ -65,10 +76,8 @@ export function PoliciesPage() {
     let reachable = 0;
     for (const [name, entry] of Object.entries(entries)) {
       const ms = policyLatencyMs(entry);
-      if (ms !== null) {
-        reachable += 1;
-        if (!best || ms < best.ms) best = { ms, name };
-      }
+      if (entry.ok === true) reachable += 1;
+      if (ms !== null && (!best || ms < best.ms)) best = { ms, name };
     }
     return { best, reachable, total: Object.keys(entries).length };
   };
@@ -82,7 +91,14 @@ export function PoliciesPage() {
         </p>
       </header>
 
-      {loading ? (
+      {groups.isError ? (
+        <Card className="p-6 text-center">
+          <p className="text-sm font-medium text-danger">策略组加载失败</p>
+          <Button className="mt-3" size="sm" variant="secondary" onClick={() => groups.refetch()}>
+            重试
+          </Button>
+        </Card>
+      ) : loading ? (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-32 w-full" />
@@ -129,7 +145,7 @@ export function PoliciesPage() {
                         {summary.total > 1 && `（${summary.reachable}/${summary.total} 可达）`}
                       </span>
                     ) : (
-                      <span className="text-text-tertiary">全部超时</span>
+                      <span className="text-text-tertiary">{summary.reachable > 0 ? `${summary.reachable}/${summary.total} 可达 · 无延迟数据` : "全部超时"}</span>
                     )}
                   </div>
                 )}
@@ -159,23 +175,57 @@ export function PoliciesPage() {
                   {drawer.policies.length} 个策略 · 当前 {selections.data?.[drawer.name] ?? "—"}
                 </DrawerDescription>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => handleTestAll(drawer.name)} disabled={testGroup.isPending}>
+                  <Button size="sm" onClick={() => handleTestAll(drawer.name)} disabled={testGroup.isPending || selectFastest.isPending}>
                     {testGroup.isPending ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Zap className="h-3.5 w-3.5" />
                     )}
-                    测速全部
+                    {testGroup.isPending ? "测速中…" : "测速全部"}
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => testResults.refetch()}
-                    disabled={testResults.isFetching}
+                    disabled={
+                      !testedGroups.has(drawer.name) || testGroup.isPending || selectFastest.isPending ||
+                      !findFastestPolicy(drawer.policies, testResults.data?.[drawer.name])
+                    }
+                    onClick={() => selectFastest.mutate({
+                      group: drawer.name,
+                      policies: drawer.policies,
+                      results: testResults.data?.[drawer.name],
+                    })}
                   >
-                    <RefreshCw className={cn("h-3.5 w-3.5", testResults.isFetching && "animate-spin")} />
-                    刷新
+                    {selectFastest.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Gauge className="h-3.5 w-3.5" />}
+                    {selectFastest.isPending
+                      ? "选择中…"
+                      : !testedGroups.has(drawer.name)
+                        ? "请先测速"
+                        : findFastestPolicy(drawer.policies, testResults.data?.[drawer.name])
+                          ? "自动选择最快"
+                          : Object.values(testResults.data?.[drawer.name] ?? {}).some((entry) => entry.ok === true)
+                            ? "无延迟数据"
+                            : "无可用节点"}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleTestAll(drawer.name)}
+                    disabled={testGroup.isPending || selectFastest.isPending}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", testGroup.isPending && "animate-spin")} />
+                    重新测速
+                  </Button>
+                </div>
+                <div className="mt-2 min-h-5 text-xs" aria-live="polite">
+                  {testGroup.isError && <span className="text-danger">测速失败，请重试。</span>}
+                  {selectFastest.isError && <span className="text-danger">自动选择失败，当前节点未更改。</span>}
+                  {selectFastest.isSuccess && selectFastest.data.group === drawer.name && (
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      已选择 {selectFastest.data.name}（{Math.round(selectFastest.data.latencyMs)}ms）
+                    </span>
+                  )}
                 </div>
               </DrawerHeader>
 

@@ -178,6 +178,8 @@ Light → Dark
 | V1（0.1.0） | Connection Manager / Dashboard / Traffic / Policies / Requests / Events / DNS / Outbound Mode / Feature Toggle / Light / Dark / System Theme / Responsive | Phase 01–07 完成（+ 部分 09/10） |
 | V1.1 | Rules / Modules / Scripts / Configuration | Phase 08 完成 |
 | V1.2 | Multiple Surge / PWA / Request Details / Advanced Filters / Keyboard Shortcuts | Phase 09 完成 |
+| v0.4.0 | 自动测速并选择策略组最快可达节点；请求详情增强（阶段耗时、连接信息与复制操作） | 独立里程碑：Policies 与 Requests 增强完成 |
+| v0.5.0 | Fleet Console：多设备在线状态、模式、活动请求与实时速率汇总，一键切换设备 | 独立里程碑：多设备聚合控制台完成 |
 | V2 | Analytics（24h Traffic / Policy Traffic / Error Trend / DNS Cache Trend / Uptime / Memory） | 基于 `/v1/metrics`，需 Capability Detection |
 
 > 原则：**第一版不把所有 API 接完**，完成 V1 范围即发布 0.1.0。

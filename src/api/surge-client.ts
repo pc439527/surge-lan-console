@@ -21,6 +21,7 @@ import type {
   Modules,
   OutboundMode,
   Policies,
+  PolicyBenchmarkResults,
   PolicyGroupTestResults,
   PolicyGroups,
   ProfileInfo,
@@ -306,13 +307,10 @@ export class SurgeClient {
     );
   }
 
-  /** POST /v1/policy_groups/test {group_name} -> {"available": [...]} */
+  /** POST /v1/policy_groups/test. Surge returns per-policy transport metrics keyed by name. */
   async testPolicyGroup(groupName: string, signal?: AbortSignal): Promise<GroupTestResult> {
-    return this.post<GroupTestResult>(
-      ENDPOINTS.policyGroupsTest,
-      { group_name: groupName },
-      signal,
-    );
+    const raw = await this.post<unknown>(ENDPOINTS.policyGroupsTest, { group_name: groupName }, signal);
+    return normalizePolicyGroupTest(raw);
   }
 
   /** POST /v1/policies/test {policy_names, url} */
@@ -325,6 +323,10 @@ export class SurgeClient {
   }
 
   /** GET /v1/policy_groups/test_results -> per-policy latency after the last test. */
+  async getPolicyBenchmarkResults(signal?: AbortSignal): Promise<PolicyBenchmarkResults> {
+    return this.get<PolicyBenchmarkResults>(ENDPOINTS.policyBenchmarkResults, undefined, signal);
+  }
+
   async getPolicyTestResults(signal?: AbortSignal): Promise<PolicyGroupTestResults> {
     const raw = await this.get<PolicyGroupTestResults>(
       ENDPOINTS.policyGroupsTestResults,
@@ -494,6 +496,38 @@ export class SurgeClient {
       return { status: null, latencyMs: latency, raw: null, error: classifyError(error) };
     }
   }
+}
+
+function normalizePolicyGroupTest(raw: unknown): GroupTestResult {
+  const root = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const winner = typeof root.winner === "string" ? root.winner : undefined;
+  const wrapped = Array.isArray(root.results) && root.results[0] && typeof root.results[0] === "object"
+    ? (root.results[0] as Record<string, unknown>).data
+    : undefined;
+  const metrics = wrapped && typeof wrapped === "object" && !Array.isArray(wrapped)
+    ? wrapped as Record<string, unknown>
+    : root;
+  const declaredAvailable = Array.isArray(root.available)
+    ? root.available.filter((item): item is string => typeof item === "string")
+    : [];
+  const results: Record<string, { ok?: boolean; latency?: number | string | null }> = Object.fromEntries(
+    declaredAvailable.map((name) => [name, { ok: true, latency: null }]),
+  );
+  for (const [name, value] of Object.entries(metrics)) {
+    if (["winner", "time", "results", "available"].includes(name)) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const metric = value as Record<string, unknown>;
+    const candidate = metric.receive ?? metric.latency;
+    const latency = typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0
+      ? Math.round(candidate)
+      : null;
+    const normalizedOk = typeof metric.ok === "boolean" ? metric.ok : undefined;
+    results[name] = {
+      ok: normalizedOk ?? latency !== null,
+      latency: latency ?? (normalizedOk ? null : "Timeout"),
+    };
+  }
+  return { available: Object.keys(results).filter((name) => results[name].ok), results, ...(winner ? { winner } : {}) };
 }
 
 export { classifyError };

@@ -33,6 +33,7 @@ export function policyLatencyView(entry: PolicyTestEntry | undefined): PolicyLat
   const ms = policyLatencyMs(entry);
   if (ms === null) {
     // ok:false after a test reads as a timeout; an absent entry as unknown.
+    if (entry?.ok === true) return { tone: "success", label: "可达" };
     return entry && entry.ok === false ? { tone: "muted", label: "超时" } : { tone: "muted", label: "—" };
   }
   return { tone: latencyTone(ms), label: `${Math.round(ms)}ms` };

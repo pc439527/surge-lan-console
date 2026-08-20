@@ -121,6 +121,8 @@ export interface DisplayPolicyGroup {
   policies: string[];
   /** policyName → typeDescription (e.g. "ss", "select", "direct") — from /v1/policy_groups. */
   types: Record<string, string>;
+  /** policyName → stable Surge lineHash for benchmark result lookup. */
+  lineHashes: Record<string, string>;
 }
 
 export function usePolicyGroupsQuery() {
@@ -134,6 +136,7 @@ export function usePolicyGroupsQuery() {
         name,
         policies: (policies ?? []).map((p) => p.name),
         types: Object.fromEntries((policies ?? []).map((p) => [p.name, p.typeDescription ?? ""])),
+        lineHashes: Object.fromEntries((policies ?? []).filter((p) => p.lineHash).map((p) => [p.name, p.lineHash!])),
       }));
     },
     enabled,

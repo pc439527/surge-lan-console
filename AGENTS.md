@@ -160,6 +160,7 @@ class SurgeClient {
 
 - 按 `ROADMAP.md` 的 Phase 顺序开发，不要跳 Phase。
 - 完成一个任务前必须通过：`pnpm typecheck`、`pnpm lint`、`pnpm build`（以及相关 `pnpm test`）。
+- 前端代码修改完成后必须重建 Docker 部署并验证实际页面；仅执行 `pnpm build` 不算完成。最终答复必须说明 Docker 重建和页面验证结果。
 - 不要为了"提前接完 API"而越过当前 Phase。
 - 不要修改与当前任务无关的代码。
 
