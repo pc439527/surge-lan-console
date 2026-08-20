@@ -31,31 +31,35 @@ export function MetricCards({ data }: { data: MetricsData }) {
       value: formatRate(data.uploadRate),
       icon: ArrowUp,
       color: "text-accent",
+      hint: "当前上传速率（所有接口合计）",
     },
     {
       label: "下载",
       value: formatRate(data.downloadRate),
       icon: ArrowDown,
-      color: "text-[#bf5af2]",
+      color: "text-chart-download",
+      hint: "当前下载速率（所有接口合计）",
     },
     {
-      label: "活动请求",
+      label: "活动连接",
       value: String(data.activeRequests),
       icon: Radio,
       color: "text-success",
+      hint: "Surge 当前的活动连接数（active requests）",
     },
     {
       label: "总流量",
       value: formatBytes(data.totalTraffic),
       icon: Layers,
       color: "text-text-primary",
+      hint: "Surge 当前运行会话的累计流量",
     },
   ];
 
   return (
     <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
       {items.map((item) => (
-        <Card key={item.label} className="p-4">
+        <Card key={item.label} className="p-4" title={item.hint}>
           <div className="flex items-center gap-2">
             <item.icon className={`h-4 w-4 ${item.color}`} />
             <span className="text-[13px] text-text-secondary">{item.label}</span>

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { SurgeClient } from "@/api/surge-client";
 import { surgeKeys } from "@/lib/surge-keys";
-import type { EventLevel, RequestItem, TrafficSummary } from "@/api/types";
+import type { EventLevel, FeatureState, RequestItem, TrafficSummary } from "@/api/types";
 import { usePageVisible } from "@/hooks/use-page-visibility";
 
 /**
@@ -132,6 +132,19 @@ export function usePolicyGroupsQuery() {
         policies: (policies ?? []).map((p) => p.name),
       }));
     },
+    enabled,
+    refetchInterval: interval,
+  });
+}
+
+// ── Features (MitM / Rewrite / Scripting / Capture) ───────────
+
+export function useFeaturesQuery() {
+  const { client, enabled, connectionId } = useEnabledClient();
+  const interval = usePollingInterval("features");
+  return useQuery<FeatureState>({
+    queryKey: surgeKeys.features(connectionId),
+    queryFn: ({ signal }) => client!.getFeatures(signal),
     enabled,
     refetchInterval: interval,
   });

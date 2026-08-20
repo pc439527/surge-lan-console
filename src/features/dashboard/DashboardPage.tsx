@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, ArrowRight } from "lucide-react";
+import { Activity, ArrowRight, Globe, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TrafficChart } from "@/features/traffic/TrafficChart";
-import { formatTime, formatEventTime } from "@/lib/format";
+import { formatTime, formatEventTime, formatUptime } from "@/lib/format";
+import { BUILD_INFO } from "@/lib/version";
+import { normalizeEpoch } from "@/api/normalize";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { MetricCards } from "./MetricCards";
 import {
@@ -16,9 +18,33 @@ import {
   useRecentRequestsQuery,
   useTrafficQuery,
 } from "./dashboard-queries";
+import { useFeaturesQuery, useOutboundModeQuery } from "@/features/shared/queries";
 import { useGroupSelectionsQuery } from "@/features/policies/policies-queries";
 import { OutboundModeControl } from "./OutboundModeControl";
 import type { DisplayEvent } from "./dashboard-queries";
+
+/**
+ * Dashboard (OPTIMIZATION_PLAN Task 02) — an overview, not full management.
+ *  - KPI row: Upload / Download / Connections / Session Traffic
+ *  - Row 1: Realtime Traffic (5 min) + Surge Status
+ *  - Row 2: Important Policy Groups (≤8, prioritized) + System Status
+ *  - Row 3: Recent Requests + Recent Events
+ * Grids use items-start so a tall card (e.g. many policy groups) never
+ * stretches its row partner — the traffic chart stays 256px.
+ */
+
+/** Prioritized groups shown on the dashboard (fall back to first-available). */
+const PRIORITY_GROUPS = [
+  "Proxy",
+  "Telegram",
+  "YouTube",
+  "Netflix",
+  "Spotify",
+  "Apple",
+  "GlobalMedia",
+  "Intelligence",
+];
+const MAX_DASHBOARD_GROUPS = 8;
 
 function statusColor(code: string | null | undefined): "success" | "warning" | "danger" | "muted" {
   if (code === "Completed") return "success";
@@ -41,14 +67,16 @@ function eventVariant(level: string): "default" | "warning" | "danger" {
 const TRAIL_MAX = 300; // 5 分钟 · 1 秒采样
 
 export function DashboardPage() {
-  const { client, missingKey, connectionId } = useSurgeClientState();
+  const { client, missingKey, connectionId, connection, demoMode } = useSurgeClientState();
   const traffic = useTrafficQuery();
   const active = useActiveRequestsQuery();
   const recent = useRecentRequestsQuery();
   const events = useEventsQuery();
   const groups = usePolicyGroupsQuery();
+  const features = useFeaturesQuery();
   const groupNames = groups.data?.map((g) => g.name) ?? [];
   const selections = useGroupSelectionsQuery(groupNames);
+  const outboundModeQuery = useOutboundModeQuery();
 
   // Rolling window for the chart (Fix 06): effects only, no setState in useMemo.
   const [trail, setTrail] = useState<{ time: number; upload: number; download: number }[]>([]);
@@ -79,7 +107,9 @@ export function DashboardPage() {
             <p className="text-sm text-text-secondary">
               {missingKey
                 ? "当前连接缺少 API 密钥 — 请到「连接」中填写。"
-                : "没有活动连接。请添加并选择 Surge 实例，或启用演示模式。"}
+                : demoMode
+                  ? "演示模式已启用 — 正在展示模拟 Surge 数据。"
+                  : "没有活动连接。请添加并选择 Surge 实例，或启用演示模式。"}
             </p>
             <Button asChild>
               <Link to="/connections">打开连接</Link>
@@ -92,12 +122,36 @@ export function DashboardPage() {
 
   const loading = traffic.isLoading || active.isLoading;
 
+  // Important groups: priority order first, then remaining, capped at 8.
+  const dashboardGroups = (() => {
+    const all = groups.data ?? [];
+    if (all.length === 0) return [];
+    const byName = new Map(all.map((g) => [g.name, g]));
+    const ordered: typeof all = [];
+    for (const name of PRIORITY_GROUPS) {
+      const g = byName.get(name);
+      if (g) ordered.push(g);
+    }
+    for (const g of all) {
+      if (!ordered.includes(g)) ordered.push(g);
+    }
+    return ordered.slice(0, MAX_DASHBOARD_GROUPS);
+  })();
+
+  // System status: uptime from traffic.startTime (normalized, Task 07).
+  const uptimeMs = traffic.data?.startTime
+    ? Date.now() - (normalizeEpoch(traffic.data.startTime) ?? Date.now())
+    : undefined;
+  const apiHealthy = traffic.isSuccess || groups.isSuccess;
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[26px] font-semibold text-text-primary">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-text-secondary">当前 Surge 实例实时概览</p>
+          <p className="mt-0.5 text-sm text-text-secondary">
+            {connection ? `${connection.name} · ${connection.host}:${connection.port}` : "当前 Surge 实例实时概览"}
+          </p>
         </div>
         <OutboundModeControl />
       </header>
@@ -113,15 +167,18 @@ export function DashboardPage() {
         }}
       />
 
-      <div className="grid gap-4 xl:grid-cols-5">
+      {/* Row 1 — Traffic + Surge Status */}
+      <div className="grid items-start gap-4 xl:grid-cols-5">
         <Card className="xl:col-span-3">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>流量</CardTitle>
-            <span className="text-xs text-text-tertiary">5 分钟 · 1 秒采样</span>
+            <CardTitle>实时流量</CardTitle>
+            <span className="text-xs text-text-tertiary">最近 5 分钟 · 1 秒采样</span>
           </CardHeader>
           <CardContent>
             {traffic.isLoading ? (
               <Skeleton className="h-64 w-full" />
+            ) : traffic.isError ? (
+              <WidgetError label="流量不可用" />
             ) : (
               <TrafficChart series={trail} />
             )}
@@ -130,24 +187,80 @@ export function DashboardPage() {
 
         <Card className="xl:col-span-2">
           <CardHeader>
-            <CardTitle>策略组</CardTitle>
+            <CardTitle>Surge 状态</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            <StatusRow label="模式" value={outboundModeQuery.data?.toUpperCase() ?? "—"} mono />
+            <StatusRow label="DNS" value={features.data ? "Active" : "—"} tone={features.data ? "success" : "muted"} />
+            {featureRows.map((row) => {
+              const enabled = features.data?.[row.key];
+              return (
+                <StatusRow
+                  key={row.key}
+                  label={row.label}
+                  value={enabled === undefined ? "—" : enabled ? "Enabled" : "Disabled"}
+                  tone={enabled === undefined ? "muted" : enabled ? "success" : "muted"}
+                />
+              );
+            })}
+            <div className="pt-1 text-[11px] text-text-tertiary">
+              功能开关请到「设置」中调整。
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 2 — Policy Summary + System Status */}
+      <div className="grid items-start gap-4 xl:grid-cols-5">
+        <Card className="xl:col-span-3">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>重要策略组</CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/policies" className="text-text-secondary">
+                查看全部 <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {groups.isLoading ? (
               <Skeleton className="h-40 w-full" />
+            ) : groups.isError ? (
+              <WidgetError label="策略组不可用" />
+            ) : dashboardGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-text-tertiary">没有返回策略组。</p>
             ) : (
-              groups.data?.map((g) => (
+              dashboardGroups.map((g) => (
                 <div key={g.name} className="flex items-center justify-between rounded-sm border border-border bg-elevated/50 px-3 py-2.5">
-                  <span className="text-sm text-text-primary">{g.name}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Globe className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+                    <span className="truncate text-sm text-text-primary">{g.name}</span>
+                  </div>
                   <Badge>{selections.data?.[g.name] ?? "—"}</Badge>
                 </div>
               ))
             )}
           </CardContent>
         </Card>
+
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle>系统状态</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            <StatusRow label="API" value={apiHealthy ? "Healthy" : "Unavailable"} tone={apiHealthy ? "success" : "danger"} />
+            <StatusRow label="连接" value={connection ? `${connection.host}:${connection.port}` : "—"} mono />
+            <StatusRow label="Version" value={`v${BUILD_INFO.version}`} mono />
+            <StatusRow label="Commit" value={BUILD_INFO.commit} mono />
+            <StatusRow label="Uptime" value={uptimeMs !== undefined ? formatUptime(uptimeMs) : "—"} />
+            <div className="pt-1 text-[11px] text-text-tertiary">
+              版本与提交信息在构建时写入，用于核对部署与 GitHub main 是否一致。
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* Row 3 — Requests + Events */}
+      <div className="grid items-start gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>最近请求</CardTitle>
@@ -164,6 +277,10 @@ export function DashboardPage() {
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
+            ) : recent.isError ? (
+              <WidgetError label="请求不可用" />
+            ) : recent.data?.length === 0 ? (
+              <p className="py-6 text-center text-sm text-text-tertiary">暂无请求。</p>
             ) : (
               recent.data?.slice(0, 6).map((req) => (
                 <div key={req.id} className="flex items-center gap-3 rounded-sm px-2 py-1.5 hover:bg-elevated/60">
@@ -192,6 +309,10 @@ export function DashboardPage() {
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
+            ) : events.isError ? (
+              <WidgetError label="事件不可用" />
+            ) : events.data?.length === 0 ? (
+              <p className="py-6 text-center text-sm text-text-tertiary">暂无事件。</p>
             ) : (
               events.data?.slice(0, 5).map((evt: DisplayEvent) => (
                 <div key={evt.id} className="flex items-start gap-3 rounded-sm px-2 py-1.5 hover:bg-elevated/60">
@@ -206,6 +327,35 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+const featureRows = [
+  { key: "mitm" as const, label: "MitM" },
+  { key: "rewrite" as const, label: "Rewrite" },
+  { key: "scripting" as const, label: "Scripting" },
+  { key: "capture" as const, label: "Capture" },
+];
+
+function StatusRow({ label, value, tone, mono }: { label: string; value: string; tone?: "success" | "danger" | "muted"; mono?: boolean }) {
+  const badge = tone === "success" ? <Badge variant="success">{value}</Badge>
+    : tone === "danger" ? <Badge variant="danger">{value}</Badge>
+    : <span className={`text-[13px] text-text-secondary ${mono ? "font-mono text-xs" : ""}`}>{value}</span>;
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[13px] text-text-secondary">{label}</span>
+      {badge}
+    </div>
+  );
+}
+
+function WidgetError({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-8 text-center">
+      <ShieldCheck className="h-6 w-6 text-text-tertiary" />
+      <p className="text-sm text-text-secondary">{label}</p>
+      <p className="text-xs text-text-tertiary">API 返回异常 — 请到「设置 → API Diagnostics」查看。</p>
     </div>
   );
 }
