@@ -27,7 +27,7 @@ export function AppLayout() {
         <TopBar />
         <main
           className={cn(
-            "mx-auto w-full px-[clamp(20px,2vw,36px)] py-6 pb-24 lg:pb-6",
+            "mx-auto w-full min-w-0 max-w-full px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-5 lg:px-[clamp(20px,2vw,36px)] lg:py-6 lg:pb-6",
             wide ? "max-w-[1920px]" : "max-w-[1760px]",
           )}
         >

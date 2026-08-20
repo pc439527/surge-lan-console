@@ -218,8 +218,8 @@ export function DashboardPage() {
       />
 
       {/* Row 1 — Traffic + Surge Status（12 列网格：图 8 / 状态 4） */}
-      <div className="grid items-start gap-4 xl:grid-cols-12">
-        <Card className="xl:col-span-8">
+      <div className="dashboard-primary-grid grid grid-cols-1 items-start gap-3 sm:gap-4 xl:grid-cols-12">
+        <Card className="min-w-0 xl:col-span-8">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>实时流量</CardTitle>
             <span className="text-xs text-text-tertiary">
@@ -238,7 +238,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-4">
+        <Card className="min-w-0 xl:col-span-4">
           <CardHeader>
             <CardTitle>Surge 状态</CardTitle>
           </CardHeader>
@@ -268,8 +268,8 @@ export function DashboardPage() {
       </div>
 
       {/* Row 2 — Policy Summary + System Status（12 列网格：策略 8 / 系统 4） */}
-      <div className="grid items-start gap-4 xl:grid-cols-12">
-        <Card className="xl:col-span-8">
+      <div className="dashboard-primary-grid grid grid-cols-1 items-start gap-3 sm:gap-4 xl:grid-cols-12">
+        <Card className="min-w-0 xl:col-span-8">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>重要策略组</CardTitle>
             <Button variant="ghost" size="sm" asChild>
@@ -299,7 +299,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-4">
+        <Card className="min-w-0 xl:col-span-4">
           <CardHeader>
             <CardTitle>系统状态</CardTitle>
           </CardHeader>
@@ -322,8 +322,8 @@ export function DashboardPage() {
       </div>
 
       {/* Row 3 — Requests + Events */}
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        <Card>
+      <div className="dashboard-secondary-grid grid grid-cols-1 items-start gap-3 sm:gap-4 xl:grid-cols-2">
+        <Card className="min-w-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>最近请求</CardTitle>
             <Button variant="ghost" size="sm" asChild>
@@ -355,7 +355,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>最近事件</CardTitle>
             <Button variant="ghost" size="sm" asChild>
