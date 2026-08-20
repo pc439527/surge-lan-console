@@ -1,7 +1,7 @@
 import axios from "axios";
 import MockAdapter from "axios-mock-adapter";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { classifyError, SurgeClient, type SurgeConnectionConfig } from "./surge-client";
+import { classifyError, isMixedContentBlocked, SurgeClient, type SurgeConnectionConfig } from "./surge-client";
 import { SurgeError } from "./errors";
 
 const CONFIG: SurgeConnectionConfig = {
@@ -148,10 +148,52 @@ describe("SurgeClient", () => {
   });
 });
 
+describe("SurgeClient proxy mode", () => {
+  let mock: MockAdapter;
+
+  beforeEach(() => {
+    mock = new MockAdapter(axios);
+  });
+
+  afterEach(() => mock.reset());
+
+  it("targets the console origin and keeps the device as proxyTarget", async () => {
+    const proxyClient = new SurgeClient({
+      ...CONFIG,
+      proxyBaseUrl: "https://console.example.ts.net:8080",
+      proxyTarget: "192.168.50.10:6171",
+    });
+    mock.onGet("/v1/outbound").reply(200, { mode: "rule" });
+    await proxyClient.getOutboundMode();
+    const req = mock.history.get[0];
+    expect(req.baseURL).toBe("https://console.example.ts.net:8080");
+    expect(req.headers?.["X-Key"]).toBe("test-key");
+  });
+});
+
 describe("classifyError", () => {
   it("classifies plain error as api", () => {
     const err = classifyError(new Error("boom"));
     expect(err).toBeInstanceOf(SurgeError);
     expect(err.kind).toBe("api");
+  });
+
+  it("detects mixed content: HTTPS page + HTTP target (pure helper)", () => {
+    expect(isMixedContentBlocked("http://192.168.50.10:6171", "https:")).toBe(true);
+    expect(isMixedContentBlocked("http://192.168.50.10:6171", "http:")).toBe(false);
+    expect(isMixedContentBlocked(undefined, "https:")).toBe(false);
+    expect(isMixedContentBlocked("https://192.168.50.10:6171", "https:")).toBe(false);
+  });
+
+  it("keeps connection error for HTTP page + HTTP target", () => {
+    const ax = {
+      isAxiosError: true,
+      code: "ERR_NETWORK",
+      message: "Network Error",
+      response: undefined,
+      config: { baseURL: "http://192.168.50.10:6171" },
+    } as never;
+    const err = classifyError(ax);
+    expect(err.kind).toBe("connection");
   });
 });

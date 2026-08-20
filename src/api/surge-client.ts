@@ -38,6 +38,16 @@ export interface SurgeConnectionConfig {
   port: number;
   apiKey: string;
   timeoutMs?: number;
+  /**
+   * Reverse-proxy mode (v0.2.2): when set, the client targets THIS base URL
+   * instead of protocol://host:port. The console's nginx proxies /v1/ to the
+   * real Surge device, which lets an HTTPS-served console reach a plain-HTTP
+   * Surge API without browser mixed-content blocks. proxyTarget keeps the
+   * original device address so the console can verify/report it.
+   */
+  proxyBaseUrl?: string;
+  /** The real device address ("192.168.50.10:6171") when proxyBaseUrl is set. */
+  proxyTarget?: string;
 }
 
 /**
@@ -57,6 +67,23 @@ export interface TestConnectionResult {
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
+/**
+ * True when the page is HTTPS but the Surge API target is plain HTTP —
+ * the browser blocks such requests as mixed content (never reaches the
+ * device), so we must explain the real cause instead of "device down".
+ *
+ * pageProtocol is injectable so tests can exercise the HTTPS case without
+ * mutating jsdom's location; production always passes window.location.protocol.
+ */
+export function isMixedContentBlocked(
+  baseUrl: string | undefined,
+  pageProtocol?: string,
+): boolean {
+  if (!baseUrl || !baseUrl.startsWith("http://")) return false;
+  const protocol = pageProtocol ?? (typeof window !== "undefined" ? window.location?.protocol : undefined);
+  return protocol === "https:";
+}
+
 function classifyError(error: unknown): SurgeError {
   if (error instanceof SurgeError) return error;
 
@@ -67,6 +94,18 @@ function classifyError(error: unknown): SurgeError {
       return new SurgeError("timeout", "请求超时。设备可能不可达或响应缓慢。", { status });
     }
     if (!ax.response) {
+      // Mixed content: the console is served over HTTPS but the Surge API is
+      // plain HTTP — the browser blocks the request before it leaves. This is
+      // NOT a device problem; direct the user to the proxy mode instead.
+      const pageProtocol =
+        typeof window !== "undefined" ? window.location?.protocol : undefined;
+      if (isMixedContentBlocked(ax.config?.baseURL, pageProtocol)) {
+        return new SurgeError(
+          "browser-security",
+          "控制台通过 HTTPS 打开，但 Surge API 是纯 HTTP —— 浏览器拦截了混合内容请求。请在连接上开启「通过控制台反向代理」后再试。",
+          { detail: "mixed-content" },
+        );
+      }
       const code = ax.code ?? "";
       const msg = ax.message ?? "";
       const isNetwork =
@@ -122,7 +161,8 @@ export class SurgeClient {
 
   constructor(private readonly config: SurgeConnectionConfig) {
     this.http = axios.create({
-      baseURL: `${config.protocol}://${config.host}:${config.port}`,
+      // Proxy mode: talk to the console origin; nginx forwards /v1/ to the device.
+      baseURL: config.proxyBaseUrl ?? `${config.protocol}://${config.host}:${config.port}`,
       timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       headers: { "X-Key": config.apiKey },
     });

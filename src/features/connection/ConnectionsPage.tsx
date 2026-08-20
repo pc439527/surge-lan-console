@@ -32,6 +32,7 @@ interface FormState {
   port: string;
   apiKey: string;
   remember: boolean;
+  useProxy: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -41,6 +42,7 @@ const EMPTY_FORM: FormState = {
   port: "6171",
   apiKey: "",
   remember: false,
+  useProxy: false,
 };
 
 export function ConnectionsPage() {
@@ -73,6 +75,7 @@ export function ConnectionsPage() {
       port: String(conn.port),
       apiKey: loadApiKey(conn.id) ?? "",
       remember: isApiKeyRemembered(conn.id),
+      useProxy: conn.useProxy ?? false,
     });
     setFormOpen(true);
   };
@@ -87,6 +90,7 @@ export function ConnectionsPage() {
       protocol: form.protocol,
       host: form.host.trim(),
       port: Number(form.port) || 6171,
+      useProxy: form.useProxy,
     };
 
     if (editing) {
@@ -198,6 +202,7 @@ export function ConnectionsPage() {
                   <span className="font-mono text-[13px]">
                     {conn.protocol}://{conn.host}:{conn.port}
                   </span>
+                  {conn.useProxy && <Badge variant="warning">代理</Badge>}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -313,6 +318,20 @@ export function ConnectionsPage() {
               />
               Remember API Key
             </label>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary">
+              <Switch
+                checked={form.useProxy}
+                onCheckedChange={(v) => setForm({ ...form, useProxy: v })}
+                aria-label="通过控制台反向代理访问"
+              />
+              通过控制台反向代理访问
+            </label>
+            <p className="-mt-1 text-xs leading-relaxed text-text-tertiary">
+              {form.useProxy
+                ? "浏览器将请求发往本控制台（同源 /v1/），由 nginx 转发到该设备。控制台以 HTTPS 打开、而 Surge API 为纯 HTTP 时必须开启，否则浏览器会拦截混合内容请求。"
+                : "浏览器直连设备 HTTP API。若控制台通过 HTTPS 打开，需开启反向代理，否则会被浏览器拦截。"}
+            </p>
           </div>
 
           <DialogFooter>

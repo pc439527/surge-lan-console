@@ -12,6 +12,13 @@ export interface SurgeConnection {
   protocol: ConnectionProtocol;
   host: string;
   port: number;
+  /**
+   * Reverse-proxy mode (v0.2.2): the browser talks to the console origin
+   * (same scheme as the page) and the console's nginx forwards /v1/ to this
+   * device. Required when the console is served over HTTPS but Surge's API is
+   * plain HTTP — direct calls would be blocked as mixed content.
+   */
+  useProxy?: boolean;
 }
 
 interface ConnectionState {
@@ -64,6 +71,11 @@ export function getActiveConnection(): SurgeConnection | null {
 /**
  * Builds a configured SurgeClient for a connection using its stored API key.
  * Returns null when the key is unavailable (user must enter it first).
+ *
+ * In proxy mode (useProxy) the client targets the console origin — the same
+ * scheme/host/port the page was loaded from — so HTTPS-served consoles can
+ * reach plain-HTTP Surge devices through the console's nginx /v1/ proxy
+ * without browser mixed-content blocks.
  */
 export function buildClientFor(
   conn: SurgeConnection,
@@ -77,6 +89,10 @@ export function buildClientFor(
     apiKey,
     timeoutMs: 5000,
   };
+  if (conn.useProxy) {
+    config.proxyBaseUrl = `${window.location.protocol}//${window.location.host}`;
+    config.proxyTarget = `${conn.host}:${conn.port}`;
+  }
   return { client: createSurgeClient(config), config };
 }
 
