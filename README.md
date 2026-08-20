@@ -1,116 +1,153 @@
 # Surge LAN Console
 
-> 运行于局域网浏览器中的 Surge Web 管理控制台，通过 Surge HTTP API 管理 Apple TV / iPhone / Mac 等 Surge 实例。
+> 面向局域网的 Surge Web 管理控制台。它直接通过 **Surge HTTP API** 管理 iOS、tvOS 与 macOS 上的 Surge 实例，无需额外的业务后端。
 
-**Apple 风格的专业网络管理工具。** 功能参考 Surge Web Dashboard / YASD，视觉重新设计，采用 Apple iOS 26 / macOS 26 的 Liquid Glass 设计语言，支持 Light / Dark 两套外观。
+Surge LAN Console 是一个基于 React 的单页应用，提供仪表盘、设备总览、策略与请求管理、流量和 DNS 观察、配置与脚本入口、事件日志及 API 诊断。界面采用 Liquid Glass 风格，支持浅色、深色和跟随系统外观，并针对手机触控视口提供独立的单列/卡片式布局。
 
-## 文档索引
-
-| 文档 | 内容 |
+| 项目 | 当前实现 |
 | --- | --- |
-| `PROJECT_SPEC.md` | 项目需求与功能规格 |
-| `DESIGN_SYSTEM.md` | iOS 26 / Liquid Glass 设计规范 |
-| `AGENTS.md` | DeepSeek Harness 开发约束与硬性规则 |
-| `ROADMAP.md` | Phase 01–10 开发路线与验收标准 |
-| `OPTIMIZATION_PLAN.md` | v0.2.0 实机兼容改造方案（Task 01–10，从 P0 开始顺序执行） |
+| 运行模型 | 浏览器直接调用 Surge HTTP API；容器只负责静态文件与可选的固定上游反向代理 |
+| 支持平台 | Surge iOS、tvOS、macOS；按端点探测可用能力，可手动覆盖平台判定 |
+| 浏览器体验 | PWA、浅色/深色/系统外观、桌面侧边栏、移动端抽屉与底部导航 |
+| 质量门禁 | `pnpm verify` 依次执行类型检查、ESLint、Vitest 与生产构建 |
+
+## 功能概览
+
+| 模块 | 说明 |
+| --- | --- |
+| Dashboard | 查看实时上传/下载速率、活动连接、API 延迟、策略组、近期请求和事件。 |
+| Fleet Console | 汇总已保存设备的在线状态、流量、活动请求与 API Key 状态，并可切换活动设备。 |
+| Connections | 维护多个 Surge 实例的名称、协议、主机、端口、平台覆盖和 API Key。 |
+| Policies | 浏览策略组、切换策略、执行测速，并展示策略选择结果。 |
+| Requests | 搜索、筛选和暂停近期请求流；手机端使用卡片列表，桌面端使用表格。 |
+| Traffic / DNS | 观察实时流量与 DNS 缓存，支持 DNS 延迟测试和刷新缓存。 |
+| Rules / Modules / Scripts | 按 API 能力展示规则、模块和脚本功能；不支持的端点会标记为不可用。 |
+| Configuration | 只读查看当前配置，并默认以 `sensitive=0` 请求以避免主动读取敏感配置内容。 |
+| Events | 按级别筛选、搜索和浏览系统信息、警告与错误事件。 |
+| Settings / API Diagnostics | 切换外观和演示模式；逐端点检查状态、延迟、解析结果与脱敏后的响应结构。 |
+
+> **移动端适配：** 首页在手机上按单列内容区组织主要面板，指标卡在常见手机宽度下采用两列；设备管理、事件日志和请求日志均在 390px 与 320px 触控视口下验证过无横向溢出。窄屏设备卡的状态徽标保持单行，避免折行影响扫读。
 
 ## 快速开始
 
-### 本地开发
+### 前置条件
+
+本地开发建议使用 **Node.js 22**、Corepack 和 pnpm。部署容器需要 Docker Engine；使用 Compose 部署时还需要 Docker Compose v2。
 
 ```bash
+corepack enable
 pnpm install
 pnpm dev
 ```
 
-### 验证（typecheck + lint + test + build）
+开发服务器启动后，打开终端输出的本地地址。首次使用可进入 **Connections** 添加 Surge 实例，也可在 **Settings** 启用演示模式预览界面。
+
+### 质量验证
 
 ```bash
 pnpm verify
 ```
 
-### Docker 部署
+该命令会顺序执行以下检查：
 
-支持两种方式：
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm typecheck` | TypeScript 类型检查 |
+| `pnpm lint` | ESLint 静态检查 |
+| `pnpm test` | Vitest 单元与组件测试 |
+| `pnpm build` | 生产构建与 PWA 产物生成 |
 
-**方式一：docker compose（推荐）**
+## 连接 Surge 实例
+
+在 **Connections** 页面填写连接名称、协议、主机、端口和 Surge HTTP API Key。连接信息保存在当前浏览器中；API Key 默认仅保留在 `sessionStorage`，关闭标签页后会消失。只有开启“Remember API Key”时，Key 才会保存到 `localStorage`。
+
+| 模式 | 适用情形 | 注意事项 |
+| --- | --- | --- |
+| 浏览器直连 | 控制台和 Surge 位于同一局域网，且控制台通过 HTTP 访问 | 推荐用于多设备管理。浏览器必须能直接访问目标 Surge HTTP API。 |
+| 控制台反向代理 | 控制台经 HTTPS 打开、目标 Surge API 仅提供 HTTP，导致浏览器拦截混合内容 | 当前 Nginx 配置是**单一固定上游**，仅适合一个明确配置的设备。 |
+
+> **重要：反向代理是部署级配置，不是动态设备路由。** `nginx.conf` 中的 `/v1/` 会固定转发到 `proxy_pass` 指定的 Surge 地址。若在多个连接上同时开启“通过控制台反向代理访问”，这些请求仍会落到同一个上游。多设备场景请优先使用浏览器直连，或为每台设备部署独立控制台/受控代理映射。
+
+如果浏览器直连失败，请确认 Surge 已启用 HTTP API、设备与浏览器网络可达、端口正确，并检查目标平台的 CORS 与 HTTPS 策略。401/403 通常表示 API Key 无效；404/405 则可能意味着当前 Surge 平台或版本没有开放对应接口。
+
+## Docker 部署
+
+镜像采用双阶段构建：Node 22 构建前端，Nginx 托管静态产物。容器监听 80 端口，默认映射到宿主机 8080。
+
+### Docker Compose
+
+在部署前，请先检查 `docker-compose.yml` 和 `nginx.conf`：若需要固定上游代理，必须把 `location /v1/` 内的 `proxy_pass` 与 `Host` 改为目标 Surge 的地址和端口。
 
 ```bash
 docker compose up -d --build
-# → http://<host>:8080
+# 打开：http://<宿主机地址>:8080
 ```
 
-**方式二：docker run**
+查看服务状态和日志：
 
 ```bash
-docker build -t surge-lan-console:0.1.0 .
-docker run -d --name surge-console -p 8080:80 surge-lan-console:0.1.0
+docker compose ps
+docker compose logs -f surge-console
 ```
 
-容器内为 Nginx 静态托管（SPA fallback + PWA + gzip + 安全头）。浏览器直连 Surge HTTP API（与 YASD 相同架构），无需后端服务。
+### Docker CLI
 
-> 连接 Apple TV / iPhone 时若遇到 CORS 拦截，确认 Surge 的 HTTP API 已启用且设备与浏览器同网段；必要时可在宿主机 Nginx 上加一层 `/v1/` 反向代理。
+```bash
+docker build \
+  --build-arg APP_VERSION=$(git describe --always --dirty) \
+  --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
+  --build-arg GIT_BRANCH=$(git branch --show-current) \
+  --build-arg BUILD_TIME=$(date -Iseconds) \
+  -t surge-lan-console:local .
 
-### HTTPS 访问（v0.2.2 反向代理模式）
+docker run -d \
+  --name surge-console \
+  --restart unless-stopped \
+  --security-opt no-new-privileges:true \
+  -p 8080:80 \
+  surge-lan-console:local
+```
 
-控制台若通过 HTTPS（如 Tailscale 域名）打开，而 Surge API 是纯 HTTP，浏览器会拦截混合内容请求，连接测试将永远失败——**设备本身是好的**。解决方式：
+> 该项目面向受信任的局域网或受控 VPN。不要在没有额外身份认证、访问控制和 TLS 终止层的情况下，将控制台直接暴露到公共互联网。
 
-1. 在连接表单中勾选 **「通过控制台反向代理访问」**；
-2. 浏览器将请求发往控制台同源 `/v1/`，由 `nginx.conf` 中的 `location /v1/` 转发到 Surge 设备；
-3. 代理目标地址在 `nginx.conf` 中配置（默认 `192.168.50.10:6171`），如设备变化请同步修改并重新部署。
+## 项目结构
 
-局域网内直接使用 `http://<host>:8080` 访问时无需开启。
+```text
+src/
+├── api/             # Surge API 客户端、端点、错误分类、能力探测和响应规范化
+├── app/             # 路由、应用根组件和 Surge 客户端上下文
+├── components/      # 布局、数据状态和基础 UI 组件
+├── features/        # Dashboard、Fleet、连接、策略、请求、流量、DNS、日志等业务模块
+├── stores/          # 连接、API Key 和用户偏好状态
+├── styles/          # 设计令牌、玻璃效果和全局响应式规则
+└── test/            # 测试初始化和端到端质量断言
+```
 
 ## 技术栈
 
-| 项目 | 技术 |
+| 类别 | 技术 |
 | --- | --- |
-| Framework | React 19 |
-| Language | TypeScript |
-| Build | Vite |
-| Package | pnpm |
-| UI Base | shadcn/ui |
-| CSS | Tailwind CSS 4 |
-| State | Zustand |
-| Server State | TanStack Query |
-| HTTP | Axios |
-| Routing | React Router |
-| Chart | ECharts |
-| Table | TanStack Table |
-| Config Editor | CodeMirror 6 |
-| Icons | Lucide React |
-| Schema | Zod（API 响应 runtime 校验，见 `src/api/schemas.ts`） |
-| Test | Vitest |
-| E2E | Playwright（规划中，未启用） |
+| Framework | React 19、TypeScript、Vite |
+| 样式与 UI | Tailwind CSS 4、Radix UI、Lucide React、Liquid Glass 设计令牌 |
+| 状态与数据 | Zustand、TanStack Query、Axios、Zod |
+| 数据展示 | ECharts、TanStack Table、CodeMirror 6 |
+| 路由与 PWA | React Router、`vite-plugin-pwa` |
+| 测试 | Vitest、Testing Library、jsdom |
+| 容器 | Node 22 Alpine 构建 + Nginx Alpine 静态托管 |
 
-## 设计来源
+## 文档索引
 
-### Design References — Apple
+| 文档 | 内容 |
+| --- | --- |
+| [PROJECT_SPEC.md](./PROJECT_SPEC.md) | 需求与功能规格。 |
+| [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) | Liquid Glass 视觉与交互规范。 |
+| [ROADMAP.md](./ROADMAP.md) | 阶段路线与验收标准。 |
+| [docs/OPTIMIZATION_PLAN.md](./docs/OPTIMIZATION_PLAN.md) | 兼容性、诊断和实机优化记录。 |
+| [AGENTS.md](./AGENTS.md) | 项目开发约束与质量要求。 |
 
-- Apple Human Interface Guidelines
-- Apple Design Resources
-- iOS & iPadOS 26 Design Kit
-- WWDC25 — Meet Liquid Glass
-- HIG — Materials
-- HIG — Layout
-- HIG — Sidebar
-- HIG — Color
-- HIG — Dark Mode
-- HIG — Typography
-- HIG — Lists and Tables
+## 设计与参考
 
-> Apple 官方把 Liquid Glass 描述为跨 Apple 平台的统一动态材质，同时强调导航层与内容层的区分，以及可读性、适应性和 Reduced Transparency / Reduced Motion 等辅助功能。
-
-### Technical References — Surge
-
-- Surge HTTP API（本项目的功能基线）
-- Surge Manual
-- Surge Scripting API
-
-### Technical References — YASD / Surge Web Dashboard
-
-- **仅参考**其 Surge API 调用、连接方式、数据模型和浏览器端实现思路。
-- **不参考**其 UI 作为项目设计标准。
+项目的交互与可访问性目标参考 Apple Human Interface Guidelines、Apple Design Resources 以及 Surge HTTP API / Surge Manual。YASD 与 Surge Web Dashboard 仅作为 API 调用方式、连接模型和数据结构的参考，不作为界面设计标准。
 
 ## License
 
