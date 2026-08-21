@@ -203,9 +203,11 @@ export class SurgeClient {
       };
     } catch (error) {
       if (error instanceof SurgeError) {
-        // The device responded, but rejected our X-Key (or an API error):
-        // reachable, NOT authenticated.
-        if (error.kind === "authentication" || error.kind === "api") {
+        // Any HTTP response proves that the device is reachable, even when
+        // the endpoint is unsupported or the server is unhealthy.  Keep
+        // reachability separate from authentication as promised by the
+        // TestConnectionResult contract.
+        if (error.status !== undefined) {
           return {
             reachable: true,
             authenticated: false,
