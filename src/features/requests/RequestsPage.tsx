@@ -81,6 +81,7 @@ export function RequestsPage() {
   const [policyFilter, setPolicyFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [protocolFilter, setProtocolFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [selected, setSelected] = useState<RequestItem | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -129,6 +130,8 @@ export function RequestsPage() {
     return [...set].sort();
   }, [data]);
 
+  const sources = useMemo(() => [...new Set(data.map((r) => r.sourceAddress).filter(Boolean))].sort(), [data]);
+
   const filtered = useMemo(() => {
     return data.filter((r: RequestItem) => {
       const q = search.trim().toLowerCase();
@@ -136,9 +139,10 @@ export function RequestsPage() {
       if (policyFilter !== "all" && r.policyName !== policyFilter) return false;
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (protocolFilter !== "all" && requestProtocol(r.URL) !== protocolFilter) return false;
+      if (sourceFilter !== "all" && r.sourceAddress !== sourceFilter) return false;
       return true;
     });
-  }, [data, search, policyFilter, statusFilter, protocolFilter]);
+  }, [data, search, policyFilter, statusFilter, protocolFilter, sourceFilter]);
 
   const columns = useMemo<ColumnDef<RequestItem>[]>(
     () => [
@@ -280,7 +284,14 @@ export function RequestsPage() {
                 <SelectItem value="Active">Active</SelectItem>
               </SelectContent>
             </Select>
-            {(search || policyFilter !== "all" || statusFilter !== "all" || protocolFilter !== "all") && (
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="来源" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部来源</SelectItem>
+                {sources.map((source) => <SelectItem key={source} value={source}>{source}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {(search || policyFilter !== "all" || statusFilter !== "all" || protocolFilter !== "all" || sourceFilter !== "all") && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -289,6 +300,7 @@ export function RequestsPage() {
                   setPolicyFilter("all");
                   setStatusFilter("all");
                   setProtocolFilter("all");
+                  setSourceFilter("all");
                 }}
               >
                 <X className="h-3.5 w-3.5" />

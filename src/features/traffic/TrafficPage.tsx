@@ -7,7 +7,8 @@ import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { useTrafficQuery } from "@/features/shared/queries";
 import { usePageVisible } from "@/hooks/use-page-visibility";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, formatUptime } from "@/lib/format";
+import { normalizeEpoch } from "@/api/normalize";
 
 type Range = "1m" | "5m" | "15m" | "30m";
 
@@ -83,6 +84,10 @@ export function TrafficPage() {
     };
   }, [windowSamples]);
 
+  const uptimeMs = traffic.data?.startTime
+    ? Date.now() - (normalizeEpoch(traffic.data.startTime) ?? Date.now())
+    : undefined;
+
   if (!client) return <NoClientNotice page="Traffic" />;
 
   return (
@@ -97,7 +102,7 @@ export function TrafficPage() {
         <SegmentedControl<Range> label="时间范围" options={RANGES} value={range} onChange={setRange} />
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
           <p className="text-[13px] text-text-secondary">当前上传</p>
           <p className="mt-2 text-[28px] font-semibold tabular-nums text-accent">{formatBytes(traffic.data?.uploadRate ?? 0)}/s</p>
@@ -105,6 +110,14 @@ export function TrafficPage() {
         <Card className="p-4">
           <p className="text-[13px] text-text-secondary">当前下载</p>
           <p className="mt-2 text-[28px] font-semibold tabular-nums text-chart-download">{formatBytes(traffic.data?.downloadRate ?? 0)}/s</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[13px] text-text-secondary">本次运行流量</p>
+          <p className="mt-2 text-[28px] font-semibold tabular-nums text-text-primary">
+            {formatBytes(traffic.data?.totalDownload ?? 0)} <span className="text-sm font-normal text-text-tertiary">↓</span>{" "}
+            {formatBytes(traffic.data?.totalUpload ?? 0)} <span className="text-sm font-normal text-text-tertiary">↑</span>
+          </p>
+          <p className="mt-1 text-xs text-text-tertiary">Surge 已运行 {uptimeMs === undefined ? "—" : formatUptime(uptimeMs)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-[13px] text-text-secondary">窗口流量</p>
@@ -122,6 +135,10 @@ export function TrafficPage() {
         <CardContent>
           {traffic.isLoading ? (
             <Skeleton className="h-80 w-full" />
+          ) : traffic.isError ? (
+            <div className="flex h-80 items-center justify-center text-sm text-danger">实时流量加载失败，请重试。</div>
+          ) : windowSamples.length === 0 ? (
+            <div className="flex h-80 items-center justify-center text-sm text-text-tertiary">正在等待实时流量样本…</div>
           ) : (
             <TrafficChart series={windowSamples.map((s) => ({ time: s.time, upload: s.uploadRate, download: s.downloadRate }))} />
           )}
