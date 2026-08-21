@@ -110,6 +110,30 @@ export function useTestGroupMutation() {
   });
 }
 
+/** Run every group test sequentially so Surge is not flooded by concurrent benchmarks. */
+export function useTestAllGroupsMutation() {
+  const { client, connectionId } = useSurgeClientState();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (groups: Array<{ name: string; policies: Policy[] }>) => {
+      const collected: PolicyGroupTestResults = {};
+      for (const group of groups) {
+        const result = await client!.testPolicyGroup(group.name);
+        collected[group.name] = result.results;
+      }
+      return collected;
+    },
+    onSuccess: (results) => {
+      queryClient.setQueryData<PolicyGroupTestResults>(
+        surgeKeys.policyTestResults(connectionId),
+        (previous) => ({ ...(previous ?? {}), ...results }),
+      );
+      toast.success(`全部测速完成：${Object.keys(results).length} 个策略组`);
+    },
+    onError: () => toast.error("一键测速未完成，请稍后重试"),
+  });
+}
+
 export function useSelectFastestPolicyMutation() {
   const { client, connectionId } = useSurgeClientState();
   const queryClient = useQueryClient();

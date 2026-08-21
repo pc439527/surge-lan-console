@@ -179,8 +179,9 @@ export function DashboardPage() {
         <OutboundModeControl />
       </header>
 
-      {/* v0.3.0 Device banner — 名称 / 地址 / 平台 / API 健康 */}
-      <Card className="p-4">
+      {/* Device and health share one aligned overview row. */}
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
+      <Card className="flex items-center p-4">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill bg-accent/12 text-accent">
@@ -214,22 +215,24 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      <Card className="border-success/20 bg-surface-primary p-5">
-        <div className="flex flex-wrap items-center gap-5">
-          <div className="flex min-w-[220px] flex-1 items-center gap-3">
+      <Card className="flex items-center border-success/20 bg-surface-primary p-4">
+        <div className="flex w-full flex-wrap items-center gap-4">
+          <div className="flex min-w-[190px] flex-1 items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-pill bg-success/12 text-success"><CheckCircle2 className="h-5 w-5" /></span>
             <div><p className="text-xs font-medium uppercase tracking-wider text-text-tertiary">Surge Health</p><p className="text-lg font-semibold text-text-primary">{healthyCount === healthItems.length ? "运行正常" : healthyCount >= 2 ? "部分服务异常" : "需要检查"}</p></div>
           </div>
           <div className="flex flex-wrap gap-2">{healthItems.map((item) => <Badge key={item.label} variant={item.healthy ? "success" : "danger"}>{item.label} · {item.healthy ? "OK" : "异常"}</Badge>)}</div>
         </div>
       </Card>
+      </div>
 
       <MetricCards
         data={{
           uploadRate: traffic.data?.uploadRate ?? 0,
           downloadRate: traffic.data?.downloadRate ?? 0,
           activeRequests: active.data?.length ?? 0,
-          latencyMs: capability.data?.latencyMs ?? null,
+          totalTraffic: (traffic.data?.totalUpload ?? 0) + (traffic.data?.totalDownload ?? 0),
+          uptime: uptimeMs !== undefined ? formatUptime(uptimeMs) : "—",
           loading,
         }}
       />
