@@ -112,6 +112,24 @@ describe("SurgeClient", () => {
     expect(result.error?.kind).toBe("authentication");
   });
 
+  it.each([
+    [404, "unsupported"],
+    [408, "timeout"],
+    [502, "server-error"],
+  ] as const)(
+    "testConnection treats an HTTP %i response as reachable (%s)",
+    async (status, kind) => {
+      mock.onGet("/v1/outbound").reply(status, {});
+
+      const result = await client.testConnection();
+
+      expect(result.reachable).toBe(true);
+      expect(result.authenticated).toBe(false);
+      expect(typeof result.latencyMs).toBe("number");
+      expect(result.error?.kind).toBe(kind);
+    },
+  );
+
   it("testConnection reports unreachable on network failure", async () => {
     mock.onGet("/v1/outbound").networkError();
     const result = await client.testConnection();
