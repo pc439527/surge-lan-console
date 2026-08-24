@@ -42,7 +42,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {NAV_SECTIONS.map((section) => (
           <div key={section.title} className="mb-5">
             {!collapsed && (
-              <p className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+              <p className="mb-1.5 px-2 text-xs font-medium uppercase tracking-wider text-text-tertiary">
                 {section.title}
               </p>
             )}
@@ -56,7 +56,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     title={unsupported ? item.label + "（当前平台不可用）" : item.label}
                     className={({ isActive }) =>
                       cn(
-                        "relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium outline-none transition-colors duration-hover ease-apple focus-visible:ring-2 focus-visible:ring-accent/50",
+                        "touch-target relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium outline-none transition-colors duration-hover ease-apple focus-visible:ring-2 focus-visible:ring-accent/50",
                         collapsed && "justify-center px-0",
                         unsupported && "opacity-55",
                         isActive
@@ -65,13 +65,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       )
                     }
                   >
-                    <item.icon className="h-[18px] w-[18px] shrink-0" />
+                    <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
                     {!collapsed && <span className="truncate">{item.label}</span>}
                     {unsupported &&
                       (collapsed ? (
                         <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-pill bg-warning" />
                       ) : (
-                        <span className="ml-auto shrink-0 rounded-pill border border-border bg-surface px-1.5 py-0.5 text-[10px] leading-none text-text-tertiary">
+                        <span className="ml-auto shrink-0 rounded-pill border border-border bg-surface px-1.5 py-0.5 text-[11px] leading-none text-text-tertiary">
                           不可用
                         </span>
                       ))}
@@ -89,7 +89,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <button
             type="button"
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left outline-none transition-colors duration-hover hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent/50",
+              "touch-target flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left outline-none transition-colors duration-hover hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent/50",
               collapsed && "justify-center px-0",
             )}
             onClick={onToggle}
@@ -99,7 +99,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {!collapsed && (
               <span className="min-w-0">
                 <span className="block truncate text-xs font-medium text-text-primary">{active.name}</span>
-                <span className="block truncate text-[11px] text-text-tertiary">
+                <span className="block truncate text-xs text-text-tertiary">
                   {active.host}:{active.port}
                 </span>
               </span>
@@ -107,17 +107,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </button>
         ) : (
           !collapsed && (
-            <p className="px-2.5 text-[11px] text-text-tertiary">未连接</p>
+            <p className="px-2.5 text-xs text-text-tertiary">未连接</p>
           )
         )}
         {!collapsed && (
           <div className="mt-2 px-2.5">
-            <p className="truncate font-mono text-[10px] text-text-tertiary">{compactBuildLabel()}</p>
+            <p className="truncate font-mono text-[11px] text-text-tertiary">{compactBuildLabel()}</p>
           </div>
         )}
         {!collapsed && (
           <Button variant="ghost" size="sm" className="mt-1 w-full justify-start gap-2 text-text-secondary" onClick={onToggle}>
-            <PanelLeftClose className="h-4 w-4" />
+            <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
             收起
           </Button>
         )}
@@ -127,9 +127,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           type="button"
           aria-label="展开侧边栏"
           onClick={onToggle}
-          className="absolute -right-3 top-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-pill glass text-text-secondary hover:text-text-primary"
+          className="touch-target glass absolute -right-4 top-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-pill text-text-secondary outline-none hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent/50"
         >
-          <PanelLeft className="h-3.5 w-3.5" />
+          <PanelLeft className="h-4 w-4" aria-hidden="true" />
         </button>
       )}
     </aside>
