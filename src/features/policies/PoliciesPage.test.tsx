@@ -95,7 +95,10 @@ describe("PoliciesPage (T06/T07)", () => {
     await user.click(screen.getByRole("button", { name: /测速全部/ }));
 
     await vi.waitFor(() => {
-      expect(client.testPolicyGroup).toHaveBeenCalledWith("Proxy");
+      // P0-1: the unified benchmark pipeline passes the signal through —
+      // assert the group name and tolerate the optional signal argument.
+      expect(client.testPolicyGroup).toHaveBeenCalledWith("Proxy", undefined);
+      expect(client.getPolicyBenchmarkResults).toHaveBeenCalledTimes(1);
     });
     expect(toast.success).toHaveBeenCalled();
   });

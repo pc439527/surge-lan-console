@@ -6,6 +6,7 @@ export type SurgeErrorKind =
   | "api"
   | "server-error"
   | "unsupported"
+  | "parse-error"
   | "browser-security";
 
 export class SurgeError extends Error {

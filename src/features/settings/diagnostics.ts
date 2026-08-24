@@ -85,6 +85,8 @@ function classifyProbe(
         return { ...base, state: "unauthorized", summary: "认证失败", errorMessage: error.message };
       case "unsupported":
         return { ...base, state: "unsupported", summary: "平台不支持", errorMessage: error.message };
+      case "parse-error":
+        return { ...base, state: "parse-error", summary: "响应结构无法识别", errorMessage: error.message };
       case "server-error":
         return { ...base, state: "server-error", summary: `HTTP ${status}`, errorMessage: error.message };
       case "timeout":

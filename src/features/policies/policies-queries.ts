@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
 import type { Policy, PolicyGroupTestResults, PolicyTestEntry } from "@/api/types";
+import { benchmarkPolicyGroups } from "@/domain/benchmark/benchmark-service";
 import { usePolicyGroupsQuery } from "@/features/shared/queries";
 import { findFastestPolicy } from "./fastest-policy";
 
@@ -68,67 +69,55 @@ export function useSelectPolicyMutation() {
   });
 }
 
+/**
+ * Single-group benchmark (P0-1): "测速全部" in the Policies drawer.
+ *
+ * Uses the SAME unified pipeline as 一键测速 — POST /policy_groups/test,
+ * then ONE GET /policies/benchmark_results, then lineHash-aligned merge —
+ * so a single-group test and a fleet-wide test always agree on latency.
+ */
 export function useTestGroupMutation() {
   const { client, connectionId } = useSurgeClientState();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ group, policies }: { group: string; policies: Policy[] }) => {
-      const result = await client!.testPolicyGroup(group);
-      if (Object.values(result.results).some((entry) => entry.ok && entry.latency == null)) {
-        try {
-          const benchmarks = await client!.getPolicyBenchmarkResults();
-          for (const policy of policies) {
-            if (!policy.lineHash) continue;
-            const benchmark = benchmarks[policy.lineHash];
-            if (!benchmark) continue;
-            const score = benchmark.lastTestScoreInMS;
-            const declaredReachable = result.available.includes(policy.name);
-            if (typeof score === "number" && Number.isFinite(score) && score > 0 &&
-                (benchmark.lastTestErrorMessage == null || declaredReachable)) {
-              result.results[policy.name] = { ok: true, latency: Math.round(score) };
-            } else if (!declaredReachable) {
-              result.results[policy.name] = { ok: false, latency: "Timeout" };
-            }
-          }
-          result.available = Object.keys(result.results).filter((name) => result.results[name].ok === true);
-        } catch {
-          // Older platforms have no benchmark endpoint; availability still remains useful.
-        }
-      }
-      return result;
+      const results = await benchmarkPolicyGroups(client!, [{ name: group, policies }]);
+      return { group, results: results[group] ?? {} };
     },
-    onSuccess: (result, { group }) => {
+    onSuccess: (outcome, { group }) => {
       queryClient.setQueryData<PolicyGroupTestResults>(
         surgeKeys.policyTestResults(connectionId),
-        (previous) => ({ ...(previous ?? {}), [group]: result.results }),
+        (previous) => ({ ...(previous ?? {}), [group]: outcome.results }),
       );
-      // The POST response itself contains the per-policy `receive` timings.
-      // Several Surge versions do not expose /test_results at all.
-      toast.success(`测速完成：${group} · ${result.available.length} 个节点可达`);
+      const reachable = Object.values(outcome.results).filter((entry) => entry.ok === true).length;
+      toast.success(`测速完成：${group} · ${reachable} 个节点可达`);
     },
     onError: () => toast.error("策略组测速失败，无法自动选择"),
   });
 }
 
-/** Run every group test sequentially so Surge is not flooded by concurrent benchmarks. */
+/**
+ * 一键测速 (P0-1): runs every group through the unified benchmark pipeline —
+ * sequential POSTs (no flooding), ONE benchmark_results read afterwards, then
+ * the merged results replace the cache, so Node Quality immediately shows
+ * "已有测速" counts and per-node latencies.
+ */
 export function useTestAllGroupsMutation() {
   const { client, connectionId } = useSurgeClientState();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (groups: Array<{ name: string; policies: Policy[] }>) => {
-      const collected: PolicyGroupTestResults = {};
-      for (const group of groups) {
-        const result = await client!.testPolicyGroup(group.name);
-        collected[group.name] = result.results;
-      }
-      return collected;
-    },
+    mutationFn: (groups: Array<{ name: string; policies: Policy[] }>) =>
+      benchmarkPolicyGroups(client!, groups),
     onSuccess: (results) => {
       queryClient.setQueryData<PolicyGroupTestResults>(
         surgeKeys.policyTestResults(connectionId),
         (previous) => ({ ...(previous ?? {}), ...results }),
       );
-      toast.success(`全部测速完成：${Object.keys(results).length} 个策略组`);
+      const reachable = Object.values(results).reduce(
+        (n, entries) => n + Object.values(entries).filter((entry) => entry.ok === true).length,
+        0,
+      );
+      toast.success(`全部测速完成：${Object.keys(results).length} 个策略组 · ${reachable} 个节点可达`);
     },
     onError: () => toast.error("一键测速未完成，请稍后重试"),
   });

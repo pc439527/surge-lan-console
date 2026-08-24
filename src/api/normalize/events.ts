@@ -36,7 +36,7 @@ export function normalizeEvents(raw: unknown): EventsAnalysis {
   const valid = mapped.filter((row) => row.ok);
   if (list.length > 0 && valid.length === 0) {
     throw new SurgeError(
-      "unsupported",
+      "parse-error",
       `/v1/events 返回了 ${list.length} 条记录，但 0 条被识别（identifier / date / type / content 缺失或类型不符）。请到「设置 → API Diagnostics」查看 Raw Structure 以校准解析器。`,
     );
   }
@@ -59,7 +59,7 @@ export function extractEventList(raw: unknown): unknown[] {
     if (Array.isArray(rec.events)) return rec.events;
   }
   throw new SurgeError(
-    "unsupported",
+    "parse-error",
     "/v1/events 返回了无法识别的结构 — 预期为数组或 { events: [...] }。",
   );
 }

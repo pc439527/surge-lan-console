@@ -43,7 +43,7 @@ export function analyzeRules(raw: unknown): RulesAnalysis {
   const valid = mapped.filter((row) => row.ok);
   if (list.length > 0 && valid.length === 0) {
     throw new SurgeError(
-      "unsupported",
+      "parse-error",
       `/v1/rules 返回了 ${list.length} 条记录，但 0 条被识别（字段名与预期不符）。请到「设置 → API Diagnostics」查看 Raw Structure 以校准解析器。`,
     );
   }
@@ -117,7 +117,7 @@ export function extractRuleList(raw: unknown): unknown[] {
     if (Array.isArray(rec.rules)) return rec.rules;
   }
   throw new SurgeError(
-    "unsupported",
+    "parse-error",
     "/v1/rules 返回了无法识别的结构 — 预期为数组或 { rules: [...] }。",
   );
 }

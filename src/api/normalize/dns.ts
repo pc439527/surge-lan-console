@@ -20,13 +20,13 @@ export interface NormalizedDns {
 
 export function normalizeDns(raw: unknown): NormalizedDns {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new SurgeError("unsupported", "/v1/dns 返回了无法识别的结构。");
+    throw new SurgeError("parse-error", "/v1/dns 返回了无法识别的结构。");
   }
   const rec = raw as Record<string, unknown>;
   const hasCache = "dnsCache" in rec;
   const hasLocal = "local" in rec;
   if (!hasCache && !hasLocal) {
-    throw new SurgeError("unsupported", "/v1/dns 缺少 dnsCache / local 字段。");
+    throw new SurgeError("parse-error", "/v1/dns 缺少 dnsCache / local 字段。");
   }
   return {
     dnsCache: normalizeCacheEntries(rec.dnsCache),
@@ -37,7 +37,7 @@ export function normalizeDns(raw: unknown): NormalizedDns {
 function normalizeCacheEntries(raw: unknown): DnsCacheEntry[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
-    throw new SurgeError("unsupported", "/v1/dns 的 dnsCache 字段不是数组。");
+    throw new SurgeError("parse-error", "/v1/dns 的 dnsCache 字段不是数组。");
   }
   return raw.map((entry) => {
     const e = entry as Record<string, unknown> | null;
@@ -56,7 +56,7 @@ function normalizeCacheEntries(raw: unknown): DnsCacheEntry[] {
 function normalizeLocalEntries(raw: unknown): DnsLocalEntry[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
-    throw new SurgeError("unsupported", "/v1/dns 的 local 字段不是数组。");
+    throw new SurgeError("parse-error", "/v1/dns 的 local 字段不是数组。");
   }
   return raw.map((entry) => {
     const e = entry as Record<string, unknown> | null;

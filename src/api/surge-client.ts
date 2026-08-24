@@ -161,11 +161,19 @@ export class SurgeClient {
   private readonly http: AxiosInstance;
 
   constructor(private readonly config: SurgeConnectionConfig) {
+    const headers: Record<string, string> = { "X-Key": config.apiKey };
+    // P0-5 multi-device proxy: in proxy mode each request declares which Surge
+    // device it targets ("host:port"). The console's nginx routes ONLY
+    // allowlisted targets (see nginx.conf `map $http_x_surge_target`) and
+    // rejects everything else — the browser can never turn the console into
+    // an open proxy, because the device address comes from the app's stored
+    // connection, not from arbitrary URLs the browser may request.
+    if (config.proxyTarget) headers["X-Surge-Target"] = config.proxyTarget;
     this.http = axios.create({
       // Proxy mode: talk to the console origin; nginx forwards /v1/ to the device.
       baseURL: config.proxyBaseUrl ?? `${config.protocol}://${config.host}:${config.port}`,
       timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      headers: { "X-Key": config.apiKey },
+      headers,
     });
     this.http.interceptors.response.use(
       (res) => res,

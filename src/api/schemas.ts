@@ -111,14 +111,20 @@ export const eventItemSchema = z.object({
   content: z.string(),
 });
 
-/** Validate unknown API data against a schema; throws a friendly SurgeError on mismatch. */
+/**
+ * Validate unknown API data against a schema; throws a friendly SurgeError on
+ * mismatch. The kind is "parse-error" (NOT "unsupported"): the endpoint
+ * responded 200, so the platform DID expose it — its structure is just not
+ * what this console understands (Surge build drift). "unsupported" is
+ * reserved exclusively for HTTP 404/405 platform gaps.
+ */
 export function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, endpoint: string): T {
   const result = schema.safeParse(data);
   if (!result.success) {
     const issues = result.error.issues.slice(0, 3).map((i) => i.path.join(".") || "(root)");
     throw new SurgeError(
-      "unsupported",
-      "Surge 返回的数据结构与预期不符（" + endpoint + "）：" + issues.join(", "),
+      "parse-error",
+      "API 返回的结构无法识别（" + endpoint + "）：" + issues.join(", ") + "。可能是 Surge 新版本调整了响应结构。",
     );
   }
   return result.data;

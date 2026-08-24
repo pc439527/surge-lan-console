@@ -8,6 +8,7 @@ import type {
   Modules,
   OutboundMode,
   Policies,
+  PolicyBenchmarkResults,
   PolicyGroupTestResults,
   PolicyGroups,
   ProfileInfo,
@@ -442,6 +443,16 @@ export class MockSurgeClient {
     const allResults = await this.getPolicyTestResults();
     const results = allResults[groupName] ?? {};
     return { available: Object.keys(results).filter((name) => results[name].ok !== false), results };
+  }
+
+  /** GET /v1/policies/benchmark_results — lineHash → latest score (P0-1 unified pipeline). */
+  async getPolicyBenchmarkResults(): Promise<PolicyBenchmarkResults> {
+    const scores: Record<string, number> = { "HK 01": 42, "HK 02": 61, "JP Tokyo": 72, SG: 95, "US LA": 168, "HK 05": 420 };
+    const out: PolicyBenchmarkResults = {};
+    for (const [name, score] of Object.entries(scores)) {
+      out["hash-" + name] = { lastTestScoreInMS: score, lastTestErrorMessage: null, lastTestDate: Date.now(), testing: 0 };
+    }
+    return out;
   }
 
   async testPolicies(): Promise<void> {

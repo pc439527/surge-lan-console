@@ -6,7 +6,7 @@ Surge LAN Console 是一个基于 React 的单页应用，提供仪表盘、设�
 
 | 项目 | 当前实现 |
 | --- | --- |
-| 运行模型 | 浏览器直接调用 Surge HTTP API；容器只负责静态文件与可选的固定上游反向代理 |
+| 运行模型 | 浏览器直接调用 Surge HTTP API；容器负责静态文件与「白名单式」多设备反向代理（`X-Surge-Target` 路由） |
 | 支持平台 | Surge iOS、tvOS、macOS；按端点探测可用能力，可手动覆盖平台判定 |
 | 浏览器体验 | PWA、浅色/深色/系统外观、桌面侧边栏、移动端抽屉与底部导航 |
 | 质量门禁 | `pnpm verify` 依次执行类型检查、ESLint、Vitest 与生产构建 |
@@ -64,9 +64,9 @@ pnpm verify
 | 模式 | 适用情形 | 注意事项 |
 | --- | --- | --- |
 | 浏览器直连 | 控制台和 Surge 位于同一局域网，且控制台通过 HTTP 访问 | 推荐用于多设备管理。浏览器必须能直接访问目标 Surge HTTP API。 |
-| 控制台反向代理 | 控制台经 HTTPS 打开、目标 Surge API 仅提供 HTTP，导致浏览器拦截混合内容 | 当前 Nginx 配置是**单一固定上游**，仅适合一个明确配置的设备。 |
+| 控制台反向代理 | 控制台经 HTTPS 打开、目标 Surge API 仅提供 HTTP，导致浏览器拦截混合内容 | 需在 `nginx.conf` 的 `map` 白名单中加入该设备（`host:port`）。默认拒绝所有未登记目标（403）。 |
 
-> **重要：反向代理是部署级配置，不是动态设备路由。** `nginx.conf` 中的 `/v1/` 会固定转发到 `proxy_pass` 指定的 Surge 地址。若在多个连接上同时开启“通过控制台反向代理访问”，这些请求仍会落到同一个上游。多设备场景请优先使用浏览器直连，或为每台设备部署独立控制台/受控代理映射。
+> **多设备反向代理（v0.6.0 / P0-5）：** `/v1/` 不再固定转发到单一设备。开启“通过控制台反向代理访问”后，客户端为每个请求携带 `X-Surge-Target: <host:port>`，nginx 仅把**白名单内**（`nginx.conf` 顶部两张 `map`）的目标转发到对应 Surge；未登记目标直接返回 403 —— 控制台不会变成开放代理。新增设备时只需在两张 `map` 中各加一行 `"host:port"` 映射并 reload nginx。
 
 如果浏览器直连失败，请确认 Surge 已启用 HTTP API、设备与浏览器网络可达、端口正确，并检查目标平台的 CORS 与 HTTPS 策略。401/403 通常表示 API Key 无效；404/405 则可能意味着当前 Surge 平台或版本没有开放对应接口。
 
@@ -76,7 +76,7 @@ pnpm verify
 
 ### Docker Compose
 
-在部署前，请先检查 `docker-compose.yml` 和 `nginx.conf`：若需要固定上游代理，必须把 `location /v1/` 内的 `proxy_pass` 与 `Host` 改为目标 Surge 的地址和端口。
+在部署前，请先检查 `docker-compose.yml` 和 `nginx.conf`：开启「控制台反向代理」的设备必须登记在 `nginx.conf` 顶部两张 `map`（`$surge_upstream` 与 `$surge_upstream_host`）的白名单中，例如 `"192.168.50.11:6171" "http://192.168.50.11:6171"`（两张 map 保持同步），然后 reload nginx。
 
 ```bash
 docker compose up -d --build

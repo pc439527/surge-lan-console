@@ -106,7 +106,7 @@ export function DataUnsupported({
       <p className="text-sm font-medium text-text-primary">{title}</p>
       <p className="max-w-sm text-xs text-text-tertiary">
         {description ??
-          "API 返回了无法识别的数据结构，或当前平台不支持该接口 — 请到「设置 → API Diagnostics」查看 Raw Structure。"}
+          "当前 Surge 平台未开放该接口（HTTP 404/405）。响应结构无法识别的问题请查看「设置 → API Diagnostics」。"}
       </p>
     </div>
   );
@@ -177,6 +177,16 @@ export function ErrorStateView({ error, api, onRetry, compact }: { error: unknow
         return <DataUnauthorized compact={compact} />;
       case "unsupported":
         return <DataUnsupported compact={compact} />;
+      case "parse-error":
+        return (
+          <DataError
+            compact={compact}
+            api={api}
+            error={error}
+            onRetry={onRetry}
+            title="API 可访问，但返回结构无法识别"
+          />
+        );
       case "connection":
       case "timeout":
       case "browser-security":

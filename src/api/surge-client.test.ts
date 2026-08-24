@@ -224,6 +224,27 @@ describe("SurgeClient proxy mode", () => {
     expect(req.baseURL).toBe("https://console.example.ts.net:8080");
     expect(req.headers?.["X-Key"]).toBe("test-key");
   });
+
+  it("sends X-Surge-Target per request so nginx can route among devices (P0-5)", async () => {
+    const proxyClient = new SurgeClient({
+      ...CONFIG,
+      proxyBaseUrl: "http://console.local:8080",
+      proxyTarget: "192.168.50.11:6171",
+    });
+    mock.onGet("/v1/outbound").reply(200, { mode: "rule" });
+    await proxyClient.getOutboundMode();
+    const req = mock.history.get[0];
+    // The header is exactly the allowlist key used by nginx.conf's
+    // map $http_x_surge_target — unknown targets get 403.
+    expect(req.headers?.["X-Surge-Target"]).toBe("192.168.50.11:6171");
+    expect(req.baseURL).toBe("http://console.local:8080");
+  });
+
+  it("does not send X-Surge-Target without proxyTarget (direct mode)", async () => {
+    mock.onGet("/v1/outbound").reply(200, { mode: "rule" });
+    await new SurgeClient(CONFIG).getOutboundMode();
+    expect(mock.history.get[0].headers?.["X-Surge-Target"]).toBeUndefined();
+  });
 });
 
 describe("classifyError", () => {
