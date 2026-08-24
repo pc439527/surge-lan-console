@@ -8,3 +8,34 @@
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-glass);
 }
+
+/* Apple accessibility setting: remove transparency instead of leaving a blurred
+   translucent layer that may reduce legibility. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--surface-primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass {
+    border-color: var(--border);
+    box-shadow: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .glass {
+    background: Canvas;
+    color: CanvasText;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid CanvasText;
+    box-shadow: none;
+    forced-color-adjust: auto;
+  }
+}
