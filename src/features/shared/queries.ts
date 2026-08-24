@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSurgeClientState } from "@/app/surge-client-context";
-import { SurgeClient } from "@/api/surge-client";
+import { summarizeTraffic, SurgeClient } from "@/api/surge-client";
 import { surgeKeys } from "@/lib/surge-keys";
-import type { EventLevel, FeatureState, RequestItem, TrafficSummary } from "@/api/types";
+import type { EventLevel, FeatureState, RequestItem, Traffic, TrafficSummary } from "@/api/types";
 import { usePageVisible } from "@/hooks/use-page-visibility";
 
 /**
@@ -42,12 +42,35 @@ function usePollingInterval(key: keyof typeof REFRESH): number | false {
 
 // ── Traffic ──────────────────────────────────────────────────
 
+/**
+ * Raw GET /v1/traffic payload - the ONLY network poller for traffic. Every
+ * other traffic consumer (Dashboard summary, Traffic page) derives from this
+ * same query key, so a single connectionId issues at most one /v1/traffic
+ * request per poll tick (TanStack Query dedupes observers on the same key).
+ */
+export function useRawTrafficQuery() {
+  const { client, enabled, connectionId } = useEnabledClient();
+  const interval = usePollingInterval("traffic");
+  return useQuery<Traffic>({
+    queryKey: surgeKeys.traffic(connectionId),
+    queryFn: ({ signal }) => client!.getTraffic(signal),
+    enabled,
+    refetchInterval: interval,
+  });
+}
+
+/**
+ * Aggregated traffic summary (Dashboard KPI cards). Uses the SAME query key
+ * and queryFn as useRawTrafficQuery and derives through `select`, so it never
+ * creates a second /v1/traffic request - it is a view over the shared cache.
+ */
 export function useTrafficQuery() {
   const { client, enabled, connectionId } = useEnabledClient();
   const interval = usePollingInterval("traffic");
-  return useQuery<TrafficSummary>({
+  return useQuery<Traffic, Error, TrafficSummary>({
     queryKey: surgeKeys.traffic(connectionId),
-    queryFn: ({ signal }) => client!.getTrafficSummary(signal),
+    queryFn: ({ signal }) => client!.getTraffic(signal),
+    select: (data) => summarizeTraffic(data),
     enabled,
     refetchInterval: interval,
   });
