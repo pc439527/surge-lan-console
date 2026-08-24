@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm font-medium outline-none transition-all duration-button ease-apple focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50",
+  "touch-target inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm font-medium outline-none transition-all duration-button ease-apple focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
