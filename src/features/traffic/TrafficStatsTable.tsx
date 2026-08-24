@@ -36,7 +36,7 @@ function SortableHeader({
     <button
       type="button"
       className={cn(
-        "inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-text-tertiary transition-colors duration-hover hover:text-text-primary",
+        "touch-target inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-text-tertiary transition-colors duration-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
         align === "right" ? "ml-auto" : "mr-auto",
       )}
       onClick={() => column.toggleSorting()}
@@ -55,9 +55,9 @@ function SortableHeader({
 
 /**
  * Shared, sortable stats table used for both network interfaces and policy
- * connectors. Default sort is total traffic (in + out) descending. The name
- * column keeps a generous min-width so long connector names stay readable;
- * anything longer ellipsizes with a native title tooltip.
+ * connectors. Desktop keeps the dense sortable table. Mobile follows the
+ * project HIG rule and reflows each row into a scan-friendly card instead of
+ * requiring horizontal scrolling.
  */
 export function TrafficStatsTable({
   rows,
@@ -78,7 +78,7 @@ export function TrafficStatsTable({
         cell: ({ row }) => (
           <span
             title={row.original.name}
-            className="block max-w-[60vw] truncate font-medium text-[13px] text-text-primary"
+            className="block max-w-[60vw] truncate text-[13px] font-medium text-text-primary"
           >
             {row.original.name}
           </span>
@@ -145,44 +145,100 @@ export function TrafficStatsTable({
     );
   }
 
+  const sortedRows = table.getRowModel().rows;
+
   return (
-    <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-      <table className="w-full min-w-[760px] border-collapse text-[13px]">
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id} className="border-b border-border">
-              {headerGroup.headers.map((header) => (
-                <th
-                  key={header.id}
-                  className={cn(
-                    "px-3 py-2.5 text-left align-middle",
-                    header.column.id === "name" ? "min-w-[" + NAME_MIN_WIDTH[kind] + "px]" : "",
-                  )}
-                >
-                  {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              className="border-b border-border/50 transition-colors duration-hover last:border-b-0 hover:bg-elevated/50"
-            >
-              {row.getVisibleCells().map((cell) => (
-                <td
-                  key={cell.id}
-                  className={cn("px-3 py-2.5 align-middle", cell.column.id === "name" ? "text-left" : "text-right")}
-                >
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      <div className="space-y-2 md:hidden">
+        {sortedRows.map((row) => (
+          <TrafficStatsCard key={row.id} row={row.original} />
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-sm border border-border bg-surface md:block">
+        <table className="w-full min-w-[760px] border-collapse text-[13px]">
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className="border-b border-border">
+                {headerGroup.headers.map((header) => {
+                  const sorted = header.column.getIsSorted();
+                  return (
+                    <th
+                      key={header.id}
+                      className="px-3 py-2.5 text-left align-middle"
+                      style={header.column.id === "name" ? { minWidth: NAME_MIN_WIDTH[kind] } : undefined}
+                      aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}
+                    >
+                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {sortedRows.map((row) => (
+              <tr
+                key={row.id}
+                className="border-b border-border/50 transition-colors duration-hover last:border-b-0 hover:bg-elevated/50"
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td
+                    key={cell.id}
+                    className={cn("px-3 py-2.5 align-middle", cell.column.id === "name" ? "text-left" : "text-right")}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function TrafficStatsCard({ row }: { row: TrafficStatsRow }) {
+  const total = (row.out ?? 0) + (row.in ?? 0);
+
+  return (
+    <article className="rounded-md border border-border bg-surface p-4">
+      <div className="flex min-w-0 items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-text-primary" title={row.name}>
+            {row.name}
+          </p>
+          <p className="mt-0.5 text-xs text-text-tertiary">累计流量</p>
+        </div>
+        <p className="shrink-0 tabular-nums text-sm font-semibold text-text-primary">{formatBytes(total)}</p>
+      </div>
+
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+        <TrafficStat label="上传" value={formatBytes(row.out ?? 0)} />
+        <TrafficStat label="下载" value={formatBytes(row.in ?? 0)} />
+        <div>
+          <dt className="text-text-tertiary">当前速度</dt>
+          <dd className="mt-1">
+            <SpeedPair up={row.outCurrentSpeed ?? 0} down={row.inCurrentSpeed ?? 0} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-text-tertiary">最高速度</dt>
+          <dd className="mt-1">
+            <SpeedPair up={row.outMaxSpeed ?? 0} down={row.inMaxSpeed ?? 0} />
+          </dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function TrafficStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-text-tertiary">{label}</dt>
+      <dd className="mt-1 tabular-nums text-[13px] font-medium text-text-primary">{value}</dd>
     </div>
   );
 }
