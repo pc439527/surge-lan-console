@@ -38,4 +38,6 @@ export const surgeKeys = {
     [...surgeKeys.root(connectionId), "rules"] as const,
   capability: (connectionId: string | null, platformOverride?: string, connectionFingerprint?: string) =>
     [...surgeKeys.root(connectionId), "capability", platformOverride ?? "auto", connectionFingerprint ?? "default"] as const,
+  health: (connectionId: string | null) =>
+    [...surgeKeys.root(connectionId), "health"] as const,
 } as const;

@@ -12,6 +12,9 @@ const ConnectionsPage = lazy(() =>
 const FleetPage = lazy(() =>
   import("@/features/fleet/FleetPage").then((m) => ({ default: m.FleetPage })),
 );
+const HealthPage = lazy(() =>
+  import("@/features/health/HealthPage").then((m) => ({ default: m.HealthPage })),
+);
 const PoliciesPage = lazy(() =>
   import("@/features/policies/PoliciesPage").then((m) => ({ default: m.PoliciesPage })),
 );
@@ -71,6 +74,7 @@ export const router = createBrowserRouter([
       { path: "configuration", element: page(<ConfigurationPage />) },
       { path: "events", element: page(<EventsPage />) },
       { path: "fleet", element: page(<FleetPage />) },
+      { path: "health", element: page(<HealthPage />) },
       { path: "connections", element: page(<ConnectionsPage />) },
       { path: "settings", element: page(<SettingsPage />) },
       { path: "settings/diagnostics", element: page(<DiagnosticsPage />) },

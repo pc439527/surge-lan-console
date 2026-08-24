@@ -37,6 +37,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/", label: "仪表盘", icon: Gauge },
       { to: "/fleet", label: "Fleet Console", icon: Network },
+      { to: "/health", label: "Health Center", icon: Stethoscope },
     ],
   },
   {
@@ -71,6 +72,7 @@ export const NAV_SECTIONS: NavSection[] = [
 
 export const MOBILE_NAV: NavItem[] = [
   { to: "/", label: "首页", icon: Gauge },
+  { to: "/health", label: "健康", icon: Stethoscope },
   { to: "/policies", label: "策略", icon: GitBranch },
   { to: "/requests", label: "请求", icon: ListOrdered },
   { to: "/traffic", label: "流量", icon: Activity },
