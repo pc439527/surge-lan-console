@@ -104,6 +104,26 @@
   }
 }
 
+/* Apple HIG accessibility: strengthen boundaries without changing the normal theme. */
+@media (prefers-contrast: more) {
+  :root {
+    --border: color-mix(in srgb, var(--text-primary) 32%, transparent);
+    --border-subtle: color-mix(in srgb, var(--text-primary) 20%, transparent);
+  }
+
+  .text-text-tertiary {
+    color: var(--text-secondary);
+  }
+}
+
+/* Windows High Contrast / forced colors: let the system own the final palette. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
 /* Scrollbar utilities (v0.2.1): scrollbar-none hides without disabling scroll
    (Sidebar, drawers); scrollbar-thin keeps a subtle track for code/raw JSON. */
 .scrollbar-none {
@@ -132,10 +152,14 @@
   background: color-mix(in oklab, var(--text-tertiary) 60%, transparent);
 }
 
-/* Touch-first Dashboard fallback: some embedded iOS web views may expose a
-   desktop-sized layout viewport despite a mobile screen. Keep the Dashboard
-   readable instead of rendering its desktop columns at a tiny scale. */
+/* Touch-first fallback: keep desktop density for mouse/trackpad, but guarantee
+   practical HIG-sized hit regions on coarse-pointer devices. */
 @media (hover: none) and (pointer: coarse) {
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
   .dashboard-primary-grid,
   .dashboard-secondary-grid {
     grid-template-columns: minmax(0, 1fr) !important;
