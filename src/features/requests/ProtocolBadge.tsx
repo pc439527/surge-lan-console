@@ -41,7 +41,7 @@ export function ProtocolBadge({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center rounded-sm border px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide",
+        "inline-flex shrink-0 items-center rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide",
         PROTOCOL_BADGE_CLASSES[app],
         className,
       )}
