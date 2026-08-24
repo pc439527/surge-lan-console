@@ -61,6 +61,293 @@ GEOIP,CN,DIRECT
 FINAL,Proxy
 `;
 
+// ── Request seeds (Request Inspector V2) ────────────────────────
+//
+// Each seed models a real Surge row from the Apple TV screenshot:
+// `method` is the app protocol, `remoteAddress` may carry a "(Port Map)"
+// annotation, and HTTP rows carry a raw requestHeader block. The
+// classifier in src/lib/request.ts must produce the badges shown below.
+
+interface MockRequestSeed {
+  method: string;
+  protocol?: string;
+  hostname: string;
+  url: string;
+  remoteAddress: string;
+  destPort?: number;
+  status: "Active" | "Completed";
+  rule: string;
+  policyName: string;
+  requestHeader?: string;
+  notes?: string[];
+  timing?: Array<{ name: string; durationInMillisecond: number }>;
+  processPath?: string;
+  pid?: number;
+  inBytes: number;
+  outBytes: number;
+}
+
+const MOCK_REQUEST_SEEDS: MockRequestSeed[] = [
+  {
+    method: "HTTPS",
+    hostname: "api-docs.deepseek.com",
+    url: "https://api-docs.deepseek.com/openapi.json",
+    remoteAddress: "192.0.2.10:443",
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,deepseek.com",
+    policyName: "Test Proxy 02",
+    requestHeader: ["GET /openapi.json HTTP/1.1", "Host: api-docs.deepseek.com", "User-Agent: DeepSeek-CLI/0.23.1", "Accept: application/json"].join("\n"),
+    notes: ["[Rule] Rule evaluating...", "[DNS] Use 203.0.113.53 for lookup", "[MITM] Decrypted using CA certificate"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 7 },
+      { name: "DNS Lookup", durationInMillisecond: 12 },
+      { name: "Connecting", durationInMillisecond: 11 },
+      { name: "TLS Handshake", durationInMillisecond: 6 },
+      { name: "Transfer", durationInMillisecond: 8 },
+    ],
+    processPath: "/usr/bin/curl",
+    pid: 2891,
+    inBytes: 1_618,
+    outBytes: 203_020,
+  },
+  {
+    method: "HTTPS",
+    hostname: "api.deepseek.com",
+    url: "https://api.deepseek.com/v1/chat/completions",
+    remoteAddress: "198.51.100.10:443",
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,deepseek.com",
+    policyName: "Test Proxy 02",
+    requestHeader: ["POST /v1/chat/completions HTTP/1.1", "Host: api.deepseek.com", "Content-Type: application/json", "Authorization: Bearer sk-***", "User-Agent: DeepSeek-CLI/0.23.1"].join("\n"),
+    notes: ["[Script] ad-block: pass", "[Rewrite] skip: not matched"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 5 },
+      { name: "DNS Lookup", durationInMillisecond: 9 },
+      { name: "Connecting", durationInMillisecond: 24 },
+      { name: "TLS Handshake", durationInMillisecond: 18 },
+      { name: "Transfer", durationInMillisecond: 640 },
+    ],
+    processPath: "/usr/bin/curl",
+    pid: 2891,
+    inBytes: 84_210,
+    outBytes: 2_048_000,
+  },
+  {
+    method: "GET",
+    hostname: "example.com",
+    url: "http://example.com/index.html",
+    remoteAddress: "93.184.216.34:80",
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,example.com",
+    policyName: "DIRECT",
+    requestHeader: ["GET /index.html HTTP/1.1", "Host: example.com", "User-Agent: curl/8.4.0", "Accept: */*"].join("\n"),
+    notes: ["[Rule] Rule evaluating...", "[HTTP] Direct connect"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 3 },
+      { name: "DNS Lookup", durationInMillisecond: 6 },
+      { name: "Connecting", durationInMillisecond: 9 },
+      { name: "Transfer", durationInMillisecond: 42 },
+    ],
+    inBytes: 1_970,
+    outBytes: 12_480,
+  },
+  {
+    method: "UDP",
+    hostname: "203.0.113.53",
+    url: "203.0.113.53:53",
+    remoteAddress: "203.0.113.53:53 (Port Map)",
+    destPort: 53,
+    status: "Completed",
+    rule: "DNS",
+    policyName: "DIRECT",
+    notes: ["[Rule] Rule evaluating...", "[DNS] Use 203.0.113.53 for lookup"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 2 },
+      { name: "DNS Lookup", durationInMillisecond: 11 },
+      { name: "Transfer", durationInMillisecond: 1 },
+    ],
+    inBytes: 210,
+    outBytes: 96,
+  },
+  {
+    method: "UDP",
+    hostname: "192.168.50.53",
+    url: "192.168.50.53:53",
+    remoteAddress: "192.168.50.53:53 (Port Map)",
+    destPort: 53,
+    status: "Completed",
+    rule: "DNS",
+    policyName: "DIRECT",
+    notes: ["[DNS] Local network resolver"],
+    timing: [{ name: "Rule Evaluating", durationInMillisecond: 1 }, { name: "Transfer", durationInMillisecond: 4 }],
+    inBytes: 118,
+    outBytes: 102,
+  },
+  {
+    method: "TCP",
+    hostname: "mail.example.com",
+    url: "mail.example.com:993",
+    remoteAddress: "203.0.113.7:993",
+    destPort: 993,
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,example.com",
+    policyName: "JP Tokyo",
+    notes: ["[Rule] Rule evaluating...", "[Proxy] Tunnel established"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 4 },
+      { name: "DNS Lookup", durationInMillisecond: 8 },
+      { name: "Connecting", durationInMillisecond: 22 },
+      { name: "Transfer", durationInMillisecond: 3_124 },
+    ],
+    processPath: "/Applications/Mail.app/Contents/MacOS/Mail",
+    pid: 921,
+    inBytes: 3_948,
+    outBytes: 1_206,
+  },
+  {
+    method: "UDP",
+    hostname: "192.168.50.30",
+    url: "192.168.50.30:514",
+    remoteAddress: "192.168.50.30:514",
+    destPort: 514,
+    status: "Completed",
+    rule: "IP-CIDR,192.168.50.0/24",
+    policyName: "DIRECT",
+    notes: ["[Rule] Rule evaluating..."],
+    timing: [{ name: "Rule Evaluating", durationInMillisecond: 1 }, { name: "Transfer", durationInMillisecond: 2 }],
+    inBytes: 512,
+    outBytes: 64,
+  },
+  {
+    method: "QUIC",
+    protocol: "QUIC",
+    hostname: "edge.example.com",
+    url: "https://edge.example.com/video/stream.m3u8",
+    remoteAddress: "192.0.2.14:443",
+    destPort: 443,
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,example.com",
+    policyName: "SG",
+    notes: ["[Rule] Rule evaluating...", "[QUIC] 0-RTT session resumed"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 6 },
+      { name: "DNS Lookup", durationInMillisecond: 10 },
+      { name: "QUIC Handshake", durationInMillisecond: 14 },
+      { name: "Transfer", durationInMillisecond: 92 },
+    ],
+    processPath: "/System/Library/PrivateFrameworks/CoreMediaPlayback.framework/XPCServices",
+    pid: 412,
+    inBytes: 4_182_400,
+    outBytes: 51_280,
+  },
+  {
+    method: "QUIC",
+    hostname: "www.gstatic.com",
+    url: "https://www.gstatic.com/generate_204",
+    remoteAddress: "198.51.100.99:443",
+    destPort: 443,
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,gstatic.com",
+    policyName: "HK 01",
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 3 },
+      { name: "DNS Lookup", durationInMillisecond: 7 },
+      { name: "QUIC Handshake", durationInMillisecond: 9 },
+      { name: "Transfer", durationInMillisecond: 14 },
+    ],
+    inBytes: 0,
+    outBytes: 88,
+  },
+  {
+    method: "UDP",
+    hostname: "stun.example.com",
+    url: "stun.example.com:3478",
+    remoteAddress: "203.0.113.127:3478",
+    destPort: 3478,
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,example.com",
+    policyName: "HK 02",
+    notes: ["[Rule] Rule evaluating...", "[STUN] Binding request"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 2 },
+      { name: "DNS Lookup", durationInMillisecond: 5 },
+      { name: "Transfer", durationInMillisecond: 12 },
+    ],
+    inBytes: 96,
+    outBytes: 96,
+  },
+  {
+    method: "WSS",
+    hostname: "stream.example.com",
+    url: "wss://stream.example.com/socket",
+    remoteAddress: "203.0.113.30:443",
+    status: "Completed",
+    rule: "DOMAIN-SUFFIX,example.com",
+    policyName: "HK 01",
+    requestHeader: ["GET /socket HTTP/1.1", "Host: stream.example.com", "Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="].join("\n"),
+    notes: ["[Rule] Rule evaluating...", "[MITM] WebSocket decrypted"],
+    timing: [
+      { name: "Rule Evaluating", durationInMillisecond: 4 },
+      { name: "DNS Lookup", durationInMillisecond: 8 },
+      { name: "Connecting", durationInMillisecond: 13 },
+      { name: "TLS Handshake", durationInMillisecond: 9 },
+    ],
+    inBytes: 302_100,
+    outBytes: 12_040,
+  },
+];
+
+/**
+ * Render a seed into a RequestItem with live-ish timestamps and bytes.
+ * `live` rows keep zeroed completion timestamps (still in flight).
+ */
+function mockRequestSeed(
+  index: number,
+  now: number,
+  id: number,
+  live: boolean,
+  rnd: () => number = () => 0.5,
+): RequestItem {
+  const seed = MOCK_REQUEST_SEEDS[index % MOCK_REQUEST_SEEDS.length];
+  const start = now - index * 1_370 - Math.floor(rnd() * 300);
+  const duration = seed.timing?.reduce((sum, t) => sum + t.durationInMillisecond, 0) ?? 120;
+  const variance = 0.85 + rnd() * 0.4;
+  return {
+    id,
+    URL: seed.url,
+    method: seed.method,
+    protocol: seed.protocol,
+    hostname: seed.hostname,
+    destPort: seed.destPort,
+    policyName: seed.policyName,
+    rule: seed.rule,
+    status: live ? "Active" : seed.status,
+    startDate: start,
+    completedDate: live ? 0 : start + Math.max(1, Math.round(duration * variance)),
+    setupCompletedDate: live ? 0 : start + Math.max(1, Math.round(duration * 0.6 * variance)),
+    sourceAddress: "192.168.50.20",
+    sourcePort: 51_200 + index * 37,
+    outBytes: Math.round(seed.outBytes * variance),
+    inBytes: Math.round(seed.inBytes * variance),
+    failed: false,
+    completed: !live,
+    modified: false,
+    replica: false,
+    remoteAddress: seed.remoteAddress,
+    localAddress: "192.168.50.10",
+    inCurrentSpeed: 0,
+    outCurrentSpeed: 0,
+    inMaxSpeed: Math.round(seed.inBytes * 0.3),
+    outMaxSpeed: Math.round(seed.outBytes * 0.3),
+    pid: seed.pid ?? 0,
+    notes: seed.notes,
+    requestHeader: seed.requestHeader,
+    processPath: seed.processPath,
+    timingRecords: seed.timing,
+    lastUpdated: new Date(start).toISOString(),
+  };
+}
+
 /**
  * In-memory Surge stand-in for development, demos and E2E.
  * Enabled only through an explicit dev/demo flag — never in production.
@@ -186,47 +473,74 @@ export class MockSurgeClient {
     );
   }
 
+  // ── Requests (Request Inspector V2 demo data, P0) ─────────────
+  /**
+   * Realistic Surge request semantics. `method` carries the app protocol
+   * ("HTTPS" / "UDP" / "TCP" / "QUIC"), NOT an HTTP verb — this mirrors
+   * real Apple TV / iOS payloads and keeps the protocol classifier honest
+   * in dev mode (previously it mocked GET/POST/HEAD, which broke the
+   * protocol pipeline exactly where it mattered).
+   */
+  private activePool: RequestItem[] = [];
+  private nextMockId = 1000;
+
+  /** Seed the persistent active-request pool once (kill actually works). */
+  private ensureActivePool(): void {
+    if (this.activePool.length > 0) return;
+    const now = Date.now();
+    this.activePool = [
+      {
+        ...mockRequestSeed(0, now, this.nextMockId++, true),
+        status: "Active",
+        completed: false,
+        inCurrentSpeed: 152_000,
+        outCurrentSpeed: 8_400,
+        inMaxSpeed: 618_000,
+        outMaxSpeed: 31_000,
+      },
+      {
+        ...mockRequestSeed(3, now, this.nextMockId++, true),
+        status: "Active",
+        completed: false,
+        inCurrentSpeed: 1_240,
+        outCurrentSpeed: 890,
+        inMaxSpeed: 12_000,
+        outMaxSpeed: 9_500,
+      },
+      {
+        ...mockRequestSeed(6, now, this.nextMockId++, true),
+        status: "Active",
+        completed: false,
+        inCurrentSpeed: 3_120,
+        outCurrentSpeed: 2_200,
+        inMaxSpeed: 41_000,
+        outMaxSpeed: 33_000,
+      },
+    ];
+  }
+
   async getRecentRequests(): Promise<RequestItem[]> {
+    this.ensureActivePool();
     const rnd = rand(tick++);
     const now = Date.now();
-    const hosts = ["api.github.com", "fonts.googleapis.com", "registry.npmjs.org", "www.apple.com"];
-    return Array.from({ length: 12 }, (_, i) => {
-      const host = hosts[Math.floor(rnd() * hosts.length)];
-      return {
-        id: i + 1,
-        remoteAddress: "192.168.50.3:54321",
-        URL: `https://${host}/${Math.floor(rnd() * 999)}`,
-        method: ["GET", "POST", "HEAD"][Math.floor(rnd() * 3)],
-        policyName: POLICY_NAMES[Math.floor(rnd() * (POLICY_NAMES.length - 1))],
-        rule: `DOMAIN-SUFFIX,${host.split(".").slice(-2).join(".")}`,
-        status: i % 4 === 0 ? "Active" : "Completed",
-        failed: false,
-        completed: true,
-        modified: false,
-        replica: false,
-        pid: 0,
-        sourcePort: 54321,
-        sourceAddress: "192.168.50.3",
-        localAddress: "192.168.50.10",
-        startDate: now - i * 1370,
-        completedDate: now - i * 1370 + 400,
-        setupCompletedDate: now - i * 1370 + 200,
-        inBytes: Math.floor(rnd() * 8000),
-        outBytes: Math.floor(rnd() * 2000),
-        inCurrentSpeed: 0,
-        outCurrentSpeed: 0,
-        inMaxSpeed: 0,
-        outMaxSpeed: 0,
-      };
-    });
+    const active = this.activePool.map((item) => ({ ...item }));
+    const completed = MOCK_REQUEST_SEEDS.flatMap((seed, i) =>
+      seed.status === "Active"
+        ? []
+        : [mockRequestSeed(i, now, this.nextMockId++, false, rnd)],
+    );
+    return [...active, ...completed];
   }
 
   async getActiveRequests(): Promise<RequestItem[]> {
-    return (await this.getRecentRequests()).slice(0, 3);
+    this.ensureActivePool();
+    return this.activePool.map((item) => ({ ...item }));
   }
 
-  async killRequest(): Promise<void> {
-    /* no-op */
+  /** POST /v1/requests/kill — drop the connection from the active pool. */
+  async killRequest(id: number): Promise<void> {
+    this.ensureActivePool();
+    this.activePool = this.activePool.filter((item) => item.id !== id);
   }
 
   async getTraffic(): Promise<Traffic> {
@@ -239,19 +553,44 @@ export class MockSurgeClient {
           outCurrentSpeed: Math.floor(rnd() * 5000 + 500),
           in: Math.floor(rnd() * 1e9 + 5e9),
           out: Math.floor(rnd() * 1e9 + 2e9),
-          inMaxSpeed: 0,
-          outMaxSpeed: 0,
+          inMaxSpeed: 37_450_000,
+          outMaxSpeed: 760_720,
         },
         en0: {
           inCurrentSpeed: 0,
           outCurrentSpeed: 0,
-          in: 0,
-          out: 0,
+          in: 2_912_000_000,
+          out: 1_045_000_000,
           inMaxSpeed: 0,
           outMaxSpeed: 0,
         },
       },
-      connector: {},
+      connector: {
+        DIRECT: {
+          outCurrentSpeed: 0,
+          in: 5_912_000_000,
+          inCurrentSpeed: 0,
+          outMaxSpeed: 0,
+          out: 3_045_000_000,
+          inMaxSpeed: 0,
+        },
+        "HK 01": {
+          outCurrentSpeed: Math.floor(rnd() * 3000 + 200),
+          in: 2_100_000_000,
+          inCurrentSpeed: Math.floor(rnd() * 8000 + 1000),
+          outMaxSpeed: 760_720,
+          out: 900_000_000,
+          inMaxSpeed: 37_450_000,
+        },
+        "Test Proxy 03": {
+          outCurrentSpeed: Math.floor(rnd() * 2500 + 400),
+          in: 1_050_000_000,
+          inCurrentSpeed: Math.floor(rnd() * 6000 + 900),
+          outMaxSpeed: 650_000,
+          out: 610_000_000,
+          inMaxSpeed: 22_000_000,
+        },
+      },
     };
   }
 

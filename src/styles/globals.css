@@ -27,6 +27,18 @@
   --color-chart-grid: var(--chart-grid);
   --color-chart-axis: var(--chart-axis);
 
+  /* Request protocol badges (Request Inspector V2). */
+  --color-proto-http: var(--proto-http);
+  --color-proto-https: var(--proto-https);
+  --color-proto-tcp: var(--proto-tcp);
+  --color-proto-udp: var(--proto-udp);
+  --color-proto-quic: var(--proto-quic);
+  --color-proto-dns: var(--proto-dns);
+  --color-proto-stun: var(--proto-stun);
+  --color-proto-ws: var(--proto-ws);
+  --color-proto-wss: var(--proto-wss);
+  --color-proto-unknown: var(--proto-unknown);
+
   --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);

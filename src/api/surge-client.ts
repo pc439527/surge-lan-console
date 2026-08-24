@@ -6,7 +6,7 @@ import axios, {
 import { ENDPOINTS } from "./endpoints";
 import { SurgeError } from "./errors";
 import { z } from "zod";
-import { parseOrThrow, requestItemSchema, trafficSummarySchema } from "./schemas";
+import { parseOrThrow, requestItemSchema, trafficSchema, trafficSummarySchema } from "./schemas";
 import { normalizeEvents } from "./normalize/events";
 import { normalizeRules } from "./normalize/rules";
 import type {
@@ -339,16 +339,30 @@ export class SurgeClient {
   }
 
   // ── Requests ──────────────────────────────────────────────────
+  /**
+   * Parse a request list and pin the original record onto each item.
+   * The schema is passthrough, so `item.raw` preserves every unmodelled
+   * platform field instead of dropping it (Request Inspector V2).
+   */
+  private parseRequestList(endpoint: string, rawRequests: unknown): RequestItem[] {
+    const items = parseOrThrow(
+      z.array(requestItemSchema),
+      rawRequests,
+      endpoint,
+    );
+    return items.map((item) => ({ ...item, raw: item }));
+  }
+
   /** GET /v1/requests/recent -> { requests: [...] } */
   async getRecentRequests(signal?: AbortSignal): Promise<RequestItem[]> {
     const raw = await this.get<RecentRequests>(ENDPOINTS.requestsRecent, undefined, signal);
-    return parseOrThrow(z.array(requestItemSchema), raw.requests ?? [], ENDPOINTS.requestsRecent);
+    return this.parseRequestList(ENDPOINTS.requestsRecent, raw.requests ?? []);
   }
 
   /** GET /v1/requests/active -> { requests: [...] } */
   async getActiveRequests(signal?: AbortSignal): Promise<RequestItem[]> {
     const raw = await this.get<RecentRequests>(ENDPOINTS.requestsActive, undefined, signal);
-    return parseOrThrow(z.array(requestItemSchema), raw.requests ?? [], ENDPOINTS.requestsActive);
+    return this.parseRequestList(ENDPOINTS.requestsActive, raw.requests ?? []);
   }
 
   /** POST /v1/requests/kill {"id": N} */
@@ -357,8 +371,13 @@ export class SurgeClient {
   }
 
   // ── Traffic ───────────────────────────────────────────────────
+  /**
+   * Raw GET /v1/traffic payload, runtime-validated so missing per-platform
+   * fields default to 0 instead of poisoning the Traffic page.
+   */
   async getTraffic(signal?: AbortSignal): Promise<Traffic> {
-    return this.get<Traffic>(ENDPOINTS.traffic, undefined, signal);
+    const raw = await this.get<unknown>(ENDPOINTS.traffic, undefined, signal);
+    return parseOrThrow(trafficSchema, raw, ENDPOINTS.traffic);
   }
 
   async getTrafficSummary(signal?: AbortSignal): Promise<TrafficSummary> {

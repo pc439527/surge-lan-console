@@ -147,6 +147,19 @@ export interface RequestItem {
   URL: string;
   timingRecords?: Array<{ durationInMillisecond: number; name: string }>;
   lastUpdated?: string;
+  /**
+   * Surge exposes these on newer builds (tvOS/iOS/macOS drift).
+   * Optional because older builds omit them — never assume their presence.
+   */
+  protocol?: string;
+  hostname?: string;
+  destPort?: number;
+  /**
+   * Original API record (post-parse, passthrough). Keeps platform-specific
+   * fields that this build of the console does not model yet, so a future
+   * Surge/Apple TV field never gets silently dropped by the Zod parse.
+   */
+  raw?: unknown;
 }
 
 /**

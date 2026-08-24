@@ -18,7 +18,52 @@ export const trafficSummarySchema = z.object({
   startTime: z.number().optional(),
 });
 
-export const requestItemSchema = z.object({
+/**
+ * Per-interface / per-connector stats from GET /v1/traffic. Every numeric
+ * field defaults to 0 when the platform omits it (macOS / iOS / tvOS payloads
+ * differ), so a missing field never crashes the Traffic page. The statistics
+ * array is optional and only present on connectors in newer Surge builds.
+ */
+export const connectorTrafficSchema = z.object({
+  outCurrentSpeed: z.number().optional().default(0),
+  in: z.number().optional().default(0),
+  inCurrentSpeed: z.number().optional().default(0),
+  outMaxSpeed: z.number().optional().default(0),
+  out: z.number().optional().default(0),
+  inMaxSpeed: z.number().optional().default(0),
+  statistics: z
+    .array(
+      z.object({
+        rttcur: z.number().optional().default(0),
+        rttvar: z.number().optional().default(0),
+        srtt: z.number().optional().default(0),
+        txpackets: z.number().optional().default(0),
+        txretransmitpackets: z.number().optional().default(0),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * Raw GET /v1/traffic payload - the single cache source for every traffic
+ * consumer (Dashboard summary + Traffic page tables).
+ */
+export const trafficSchema = z.object({
+  startTime: z.number().optional().default(0),
+  interface: z.record(z.string(), connectorTrafficSchema).optional().default({}),
+  connector: z.record(z.string(), connectorTrafficSchema).optional().default({}),
+});
+
+/**
+ * RequestItem schema (Request Inspector V2).
+ *
+ * `.passthrough()` is intentional: Surge on iOS / tvOS / macOS returns a
+ * superset of fields across builds (e.g. `protocol`, `hostname`, `destPort`
+ * on newer tvOS). Unmodelled fields survive the parse and are kept on
+ * `RequestItem.raw` so no platform-specific data is ever lost.
+ */
+export const requestItemSchema = z
+  .object({
   id: z.number(),
   URL: z.string(),
   method: z.string().optional().default(""),
@@ -51,7 +96,12 @@ export const requestItemSchema = z.object({
     .array(z.object({ durationInMillisecond: z.number(), name: z.string() }))
     .optional()
     .default([]),
-});
+  // Platform-drift fields: present on newer Surge builds, absent on others.
+  protocol: z.string().optional(),
+  hostname: z.string().optional(),
+  destPort: z.number().optional(),
+})
+  .passthrough();
 
 export const eventItemSchema = z.object({
   identifier: z.string(),

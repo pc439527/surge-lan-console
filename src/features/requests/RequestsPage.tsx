@@ -7,11 +7,26 @@ import {
   getFilteredRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Check, Clipboard, Pause, Play, Search, X } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  Check,
+  Clipboard,
+  FileText,
+  Layers,
+  Loader2,
+  Pause,
+  Play,
+  Search,
+  Timer,
+  X,
+  Zap,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Drawer,
@@ -30,9 +45,19 @@ import {
 } from "@/components/ui/Select";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import type { RequestItem } from "@/api/types";
-import { formatBytes, formatDuration, formatMsTimestamp } from "@/lib/format";
+import type { SurgeClient } from "@/api/surge-client";
+import { formatBytes, formatDuration, formatMsTimestamp, formatRate } from "@/lib/format";
 import { normalizeDurationMs, normalizeEpoch } from "@/api/normalize";
-import { requestProtocol } from "@/lib/request";
+import {
+  classifyRequestProtocol,
+  noteTag,
+  parseRequestHeaders,
+  requestHostLabel,
+  requestSourceAddress,
+  requestTargetAddress,
+  type RequestAppProtocol,
+} from "@/lib/request";
+import { ProtocolBadge } from "./ProtocolBadge";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { useRecentRequestsQuery } from "@/features/shared/queries";
@@ -73,6 +98,19 @@ function statusLabel(status: string | null | undefined): string {
   return status ?? "—";
 }
 
+/** App protocols that carry an HTTP-style request header block. */
+const HTTP_LIKE_PROTOCOLS: ReadonlySet<RequestAppProtocol> = new Set(["HTTP", "HTTPS", "WS", "WSS"]);
+
+/**
+ * A request can be killed when Surge still tracks it as in-flight: status is
+ * not Completed/Failed and the completed flag is not set (Request Inspector V2).
+ */
+function isKillable(request: RequestItem): boolean {
+  if (request.failed) return false;
+  if (request.completed) return false;
+  return request.status !== "Completed" && request.status !== "Failed";
+}
+
 export function RequestsPage() {
   const { client } = useSurgeClientState();
   const [paused, setPaused] = useState(false);
@@ -88,10 +126,15 @@ export function RequestsPage() {
   // Fix 07: pause freezes a real snapshot — the live query data keeps
   // updating underneath, but the table shows the captured list.
   const [pausedSnapshot, setPausedSnapshot] = useState<RequestItem[] | null>(null);
-  const data = useMemo<RequestItem[]>(
-    () => pausedSnapshot ?? (requestsQuery.data ?? []),
-    [pausedSnapshot, requestsQuery.data],
-  );
+
+  // Rows terminated via the inspector disappear immediately, before the
+  // next poll refreshes the list.
+  const [killedIds, setKilledIds] = useState<ReadonlySet<number>>(() => new Set());
+
+  const data = useMemo<RequestItem[]>(() => {
+    const base = pausedSnapshot ?? (requestsQuery.data ?? []);
+    return killedIds.size === 0 ? base : base.filter((req) => !killedIds.has(req.id));
+  }, [pausedSnapshot, requestsQuery.data, killedIds]);
 
   const togglePause = useCallback(() => {
     setPaused((prev) => {
@@ -118,8 +161,8 @@ export function RequestsPage() {
   const protocols = useMemo(() => {
     const set = new Set<string>();
     data.forEach((r: RequestItem) => {
-      const proto = requestProtocol(r.URL);
-      if (proto !== "unknown") set.add(proto);
+      const app = classifyRequestProtocol(r).app;
+      if (app !== "UNKNOWN") set.add(app);
     });
     return [...set].sort();
   }, [data]);
@@ -135,10 +178,12 @@ export function RequestsPage() {
   const filtered = useMemo(() => {
     return data.filter((r: RequestItem) => {
       const q = search.trim().toLowerCase();
-      if (q && !r.URL.toLowerCase().includes(q) && !hostOf(r.URL).includes(q)) return false;
+      const host = requestHostLabel(r).toLowerCase();
+      const target = requestTargetAddress(r).toLowerCase();
+      if (q && !r.URL.toLowerCase().includes(q) && !host.includes(q) && !target.includes(q)) return false;
       if (policyFilter !== "all" && r.policyName !== policyFilter) return false;
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
-      if (protocolFilter !== "all" && requestProtocol(r.URL) !== protocolFilter) return false;
+      if (protocolFilter !== "all" && classifyRequestProtocol(r).app !== protocolFilter) return false;
       if (sourceFilter !== "all" && r.sourceAddress !== sourceFilter) return false;
       return true;
     });
@@ -152,22 +197,26 @@ export function RequestsPage() {
         cell: (info: CellContext<RequestItem, unknown>) => {
           const raw = info.getValue() as number;
           const ms = normalizeEpoch(raw);
-          return <span className="font-mono text-xs text-text-tertiary">{formatMsTimestamp(ms ?? NaN)}</span>;
+          return <span className="whitespace-nowrap font-mono text-xs text-text-tertiary">{formatMsTimestamp(ms ?? NaN)}</span>;
         },
       },
       {
         accessorKey: "URL",
         header: "主机",
-        cell: (info: CellContext<RequestItem, unknown>) => (
-          <span className="max-w-[220px] truncate text-[13px] text-text-primary">{hostOf(info.getValue() as string)}</span>
-        ),
+        cell: (info: CellContext<RequestItem, unknown>) => <HostCell request={info.row.original} />,
       },
       {
         accessorKey: "method",
-        header: "方法",
-        cell: (info: CellContext<RequestItem, unknown>) => (
-          <span className="font-mono text-xs text-text-secondary">{info.getValue() as string}</span>
-        ),
+        header: "协议",
+        cell: (info: CellContext<RequestItem, unknown>) => {
+          const app = classifyRequestProtocol(info.row.original).app;
+          return <ProtocolBadge app={app} />;
+        },
+      },
+      {
+        accessorKey: "sourceAddress",
+        header: "来源",
+        cell: (info: CellContext<RequestItem, unknown>) => <SourceCell request={info.row.original} />,
       },
       {
         accessorKey: "policyName",
@@ -180,7 +229,7 @@ export function RequestsPage() {
         accessorKey: "rule",
         header: "规则",
         cell: (info: CellContext<RequestItem, unknown>) => (
-          <span className="max-w-[180px] truncate text-xs text-text-secondary">{info.getValue() as string}</span>
+          <span className="block max-w-[180px] truncate text-xs text-text-secondary">{info.getValue() as string}</span>
         ),
       },
       {
@@ -192,6 +241,11 @@ export function RequestsPage() {
         },
       },
       {
+        accessorKey: "inBytes",
+        header: "流量",
+        cell: (info: CellContext<RequestItem, unknown>) => <TrafficCell request={info.row.original} />,
+      },
+      {
         accessorKey: "completedDate",
         header: "耗时",
         cell: (info: CellContext<RequestItem, unknown>) => {
@@ -200,7 +254,7 @@ export function RequestsPage() {
           // normalize both before subtracting; invalid/negative → "—".
           const duration = normalizeDurationMs(row.startDate, row.completedDate);
           return (
-            <span className="font-mono text-xs text-text-secondary">
+            <span className="whitespace-nowrap font-mono text-xs text-text-secondary">
               {formatDuration(duration)}
             </span>
           );
@@ -247,7 +301,7 @@ export function RequestsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
               <Input
                 className="pl-9"
-                placeholder="搜索主机或 URL..."
+                placeholder="搜索主机 / IP / URL..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -282,6 +336,7 @@ export function RequestsPage() {
                 <SelectItem value="all">全部状态</SelectItem>
                 <SelectItem value="Completed">Completed</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="Failed">Failed</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sourceFilter} onValueChange={setSourceFilter}>
@@ -321,7 +376,6 @@ export function RequestsPage() {
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
             </div>
           ) : (
             <div className="hidden overflow-x-auto md:block">
@@ -348,7 +402,7 @@ export function RequestsPage() {
                       onClick={() => setSelected(row.original)}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-3 py-2.5">
+                        <td key={cell.id} className="px-3 py-2.5 align-middle">
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
@@ -373,17 +427,19 @@ export function RequestsPage() {
                   key={req.id}
                   type="button"
                   onClick={() => setSelected(req)}
-                  className="flex w-full flex-col gap-1 rounded-sm border border-border bg-elevated/50 px-3 py-2.5 text-left outline-none transition-colors duration-hover hover:bg-elevated/70"
+                  className="flex w-full flex-col gap-1.5 rounded-sm border border-border bg-elevated/50 px-3 py-2.5 text-left outline-none transition-colors duration-hover hover:bg-elevated/70"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-primary">{hostOf(req.URL)}</span>
-                    <Badge variant={statusTone(req.status)}>{statusLabel(req.status)}</Badge>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-primary">{requestHostLabel(req)}</span>
+                    <ProtocolBadge app={classifyRequestProtocol(req).app} />
                   </div>
+                  <div className="font-mono text-[11px] text-text-tertiary">{requestTargetAddress(req)}</div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[11px] text-text-tertiary">
-                      {requestProtocol(req.URL)} · {req.policyName || "—"}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Badge variant={statusTone(req.status)}>{statusLabel(req.status)}</Badge>
+                      <span className="truncate text-[11px] text-text-tertiary">{req.policyName || "—"}</span>
                     </span>
-                    <span className="font-mono text-[11px] text-text-secondary">
+                    <span className="shrink-0 font-mono text-[11px] text-text-secondary">
                       {formatDuration(normalizeDurationMs(req.startDate, req.completedDate))}
                     </span>
                   </div>
@@ -397,15 +453,25 @@ export function RequestsPage() {
         </CardContent>
       </Card>
 
-      {/* Request detail drawer */}
+      {/* Request inspector drawer (Request Inspector V2): wider, 3 tabs */}
       <Drawer open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <DrawerContent side="right">
+        <DrawerContent side="right" className="w-[min(100vw,560px)]">
           <DrawerHeader>
             <DrawerTitle>请求详情</DrawerTitle>
-            <DrawerDescription>{selected ? hostOf(selected.URL) : ""}</DrawerDescription>
+            <DrawerDescription>{selected ? requestHostLabel(selected) : ""}</DrawerDescription>
           </DrawerHeader>
-          <DrawerBody>
-            {selected && <RequestDetails request={selected} />}
+          <DrawerBody className="scrollbar-thin">
+            {selected && (
+              <RequestInspector
+                request={selected}
+                client={client}
+                onKilled={(id) => {
+                  setKilledIds((prev) => new Set(prev).add(id));
+                  // The connection is gone — close the inspector with it.
+                  setSelected((sel) => (sel && sel.id === id ? null : sel));
+                }}
+              />
+            )}
           </DrawerBody>
         </DrawerContent>
       </Drawer>
@@ -413,11 +479,72 @@ export function RequestsPage() {
   );
 }
 
-export function RequestDetails({ request }: { request: RequestItem }) {
-  const [copyState, setCopyState] = useState<"url" | "headers" | "error" | null>(null);
-  const timing = buildRequestTimingWaterfall(request);
+// ── Table cells ───────────────────────────────────────────────
 
-  const copy = async (kind: "url" | "headers", value: string) => {
+function HostCell({ request }: { request: RequestItem }) {
+  return (
+    <div className="min-w-0">
+      <div className="max-w-[190px] truncate text-[13px] text-text-primary">{requestHostLabel(request)}</div>
+      <div className="max-w-[190px] truncate font-mono text-[11px] text-text-tertiary">{requestTargetAddress(request)}</div>
+    </div>
+  );
+}
+
+function SourceCell({ request }: { request: RequestItem }) {
+  const source = requestSourceAddress(request);
+  const [host, port] = source === "—" ? ["—", null] : splitLastColon(source);
+  return (
+    <div className="min-w-0">
+      <div className="whitespace-nowrap text-xs text-text-primary">{host}</div>
+      {port && <div className="font-mono text-[11px] text-text-tertiary">:{port}</div>}
+    </div>
+  );
+}
+
+/** Split "host:port" at the LAST colon (IPv6-safe). */
+function splitLastColon(value: string): [string, string | null] {
+  const idx = value.lastIndexOf(":");
+  if (idx <= 0) return [value, null];
+  const port = value.slice(idx + 1);
+  if (!/^\d{1,5}$/.test(port)) return [value, null];
+  return [value.slice(0, idx), port];
+}
+
+function TrafficCell({ request }: { request: RequestItem }) {
+  return (
+    <div className="flex flex-col items-end gap-0.5 font-mono text-[11px] leading-tight">
+      <span className="text-text-secondary">↓ {formatBytes(request.inBytes ?? 0)}</span>
+      <span className="text-text-tertiary">↑ {formatBytes(request.outBytes ?? 0)}</span>
+    </div>
+  );
+}
+
+// ── Request Inspector (Request Inspector V2) ───────────────────
+
+type InspectorTab = "overview" | "request" | "timing";
+
+export function RequestInspector({
+  request,
+  client,
+  onKilled,
+}: {
+  request: RequestItem;
+  client: SurgeClient;
+  onKilled?: (id: number) => void;
+}) {
+  const [tab, setTab] = useState<InspectorTab>("overview");
+  const [copyState, setCopyState] = useState<"url" | "headers" | "raw" | "error" | null>(null);
+  const [showRawHeaders, setShowRawHeaders] = useState(false);
+  const [confirmingKill, setConfirmingKill] = useState(false);
+
+  const protocol = classifyRequestProtocol(request);
+  const timing = buildRequestTimingWaterfall(request);
+  const parsedHeaders = parseRequestHeaders(request.requestHeader);
+  const duration = normalizeDurationMs(request.startDate, request.completedDate);
+  const setupDuration = normalizeDurationMs(request.startDate, request.setupCompletedDate);
+  const killable = isKillable(request);
+
+  const copy = async (kind: "url" | "headers" | "raw", value: string) => {
     try {
       await navigator.clipboard.writeText(value);
       setCopyState(kind);
@@ -426,40 +553,233 @@ export function RequestDetails({ request }: { request: RequestItem }) {
     }
   };
 
+  const killMutation = useMutation({
+    mutationFn: () => client.killRequest(request.id),
+    onSuccess: () => {
+      toast.success("连接已终止");
+      setConfirmingKill(false);
+      onKilled?.(request.id);
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "终止连接失败");
+      setConfirmingKill(false);
+    },
+  });
+
   return (
     <div className="space-y-5">
+      {/* Header: [protocol] [status] duration + host/target */}
+      <div className="rounded-sm border border-border bg-surface/60 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <ProtocolBadge app={protocol.app} />
+          <Badge variant={statusTone(request.status)}>{statusLabel(request.status)}</Badge>
+          <span className="ml-auto font-mono text-xs tabular-nums text-text-secondary">
+            {formatDuration(duration)}
+          </span>
+        </div>
+        <div className="mt-2 break-all text-[15px] font-semibold text-text-primary">
+          {requestHostLabel(request)}
+        </div>
+        <div className="mt-0.5 break-all font-mono text-xs text-text-tertiary">
+          {requestTargetAddress(request)}
+        </div>
+      </div>
+
+      <SegmentedControl<InspectorTab>
+        value={tab}
+        onChange={setTab}
+        label="请求详情分区"
+        className="w-full"
+        options={[
+          { value: "overview", label: "概览", icon: <Layers className="h-3.5 w-3.5" /> },
+          { value: "request", label: "请求", icon: <FileText className="h-3.5 w-3.5" /> },
+          { value: "timing", label: "计时", icon: <Timer className="h-3.5 w-3.5" /> },
+        ]}
+      />
+
+      {tab === "overview" && <OverviewTab request={request} protocol={protocol} duration={duration} />}
+      {tab === "request" && <RequestTab request={request} protocol={protocol} parsedHeaders={parsedHeaders} showRaw={showRawHeaders} onToggleRaw={() => setShowRawHeaders((v) => !v)} copyState={copyState} onCopy={copy} />}
+      {tab === "timing" && <TimingTab request={request} timing={timing} duration={duration} setupDuration={setupDuration} />}
+
+      {killable && (
+        <div className="rounded-sm border border-danger/20 bg-danger/5 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <Zap className="h-3.5 w-3.5 text-danger" />
+            <span className="text-xs font-medium text-text-primary">活动请求</span>
+          </div>
+          {confirmingKill ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-text-secondary">终止该连接？</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setConfirmingKill(false)} disabled={killMutation.isPending}>
+                  取消
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => killMutation.mutate()} disabled={killMutation.isPending}>
+                  {killMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                  确认终止
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="destructive" onClick={() => setConfirmingKill(true)}>
+              <Zap className="h-3.5 w-3.5" />
+              终止连接
+            </Button>
+          )}
+        </div>
+      )}
+
+      <p className="min-h-4 text-xs text-danger" aria-live="polite">
+        {copyState === "error" ? "复制失败，请检查浏览器剪贴板权限。" : ""}
+      </p>
+    </div>
+  );
+}
+
+// ── Inspector tabs ─────────────────────────────────────────────
+
+function OverviewTab({
+  request,
+  protocol,
+  duration,
+}: {
+  request: RequestItem;
+  protocol: ReturnType<typeof classifyRequestProtocol>;
+  duration: number | undefined;
+}) {
+  const processLabel = request.processPath
+    ? request.pid > 0
+      ? `${request.processPath} (PID ${request.pid})`
+      : request.processPath
+    : "—";
+  return (
+    <>
       <Section title="概览">
+        <Row label="请求" value={"#" + String(request.id)} mono />
         <Row label="时间" value={formatMsTimestamp(normalizeEpoch(request.startDate) ?? NaN)} />
-        <Row label="域名" value={hostOf(request.URL)} />
-        <CopyRow label="URL" value={request.URL} copied={copyState === "url"} onCopy={() => copy("url", request.URL)} />
-        <Row label="方法" value={request.method} />
-        <Row label="协议" value={requestProtocol(request.URL)} mono />
-        <Row label="状态" value={request.status ?? "—"} />
-        <Row label="来源" value={`${request.sourceAddress}:${request.sourcePort}`} mono />
+        {protocol.transport && <Row label="传输" value={protocol.transport} mono />}
+        <Row label="来源" value={requestSourceAddress(request)} mono />
+        <Row label="本机" value={request.localAddress || "—"} mono />
+        <Row label="目标" value={requestTargetAddress(request)} mono />
+        <Row label="出口" value={request.policyName || "—"} />
+        <Row label="规则" value={request.rule || "—"} mono />
+        <Row label="进程" value={processLabel} mono />
       </Section>
-      <Section title="路由">
-        <Row label="规则" value={request.rule} mono />
-        <Row label="出口" value={request.policyName} />
-        <Row label="目标" value={request.remoteAddress} mono />
-        <Row label="本地地址" value={request.localAddress} mono />
-        {request.processPath && <Row label="进程" value={request.processPath} mono />}
+      <Section title="流量">
+        <Row label="↓ 下载" value={formatBytes(request.inBytes ?? 0)} mono />
+        <Row label="↑ 上传" value={formatBytes(request.outBytes ?? 0)} mono />
+        <Row label="峰值下载" value={formatRate(request.inMaxSpeed ?? 0)} mono />
+        <Row label="峰值上传" value={formatRate(request.outMaxSpeed ?? 0)} mono />
+        <Row label="当前下载速率" value={formatRate(request.inCurrentSpeed ?? 0)} mono />
+        <Row label="当前上传速率" value={formatRate(request.outCurrentSpeed ?? 0)} mono />
       </Section>
-      <Section title="网络">
-        <Row label="总耗时" value={formatDuration(normalizeDurationMs(request.startDate, request.completedDate))} />
-        <Row label="连接建立" value={formatDuration(normalizeDurationMs(request.startDate, request.setupCompletedDate))} />
-        <Row label="上传" value={formatBytes(request.outBytes ?? 0)} />
-        <Row label="下载" value={formatBytes(request.inBytes ?? 0)} />
+      <p className="min-h-4 text-xs text-text-tertiary">
+        {duration === undefined ? "此请求尚未完成，耗时将在完成后显示。" : ""}
+      </p>
+    </>
+  );
+}
+
+function RequestTab({
+  request,
+  protocol,
+  parsedHeaders,
+  showRaw,
+  onToggleRaw,
+  copyState,
+  onCopy,
+}: {
+  request: RequestItem;
+  protocol: ReturnType<typeof classifyRequestProtocol>;
+  parsedHeaders: ReturnType<typeof parseRequestHeaders>;
+  showRaw: boolean;
+  onToggleRaw: () => void;
+  copyState: "url" | "headers" | "raw" | "error" | null;
+  onCopy: (kind: "url" | "headers" | "raw", value: string) => void;
+}) {
+  const httpLike = HTTP_LIKE_PROTOCOLS.has(protocol.app);
+  const hasHeader = Boolean(request.requestHeader);
+  return (
+    <>
+      <Section title="URL">
+        <CopyRow label="URL" value={request.URL} copied={copyState === "url"} onCopy={() => onCopy("url", request.URL)} />
+      </Section>
+      <Section title="请求头">
+        {httpLike && hasHeader ? (
+          <div className="space-y-3">
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={onToggleRaw}>
+                {showRaw ? "查看解析视图" : "查看原始请求头"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => onCopy("headers", request.requestHeader ?? "")}>
+                {copyState === "headers" || copyState === "raw" ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+                {copyState === "headers" || copyState === "raw" ? "已复制" : "复制全部"}
+              </Button>
+            </div>
+            {showRaw ? (
+              <pre className="max-h-72 overflow-auto rounded-sm border border-border bg-surface/60 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                {request.requestHeader}
+              </pre>
+            ) : parsedHeaders.headers.length > 0 ? (
+              <dl className="space-y-1.5">
+                {parsedHeaders.requestLine && (
+                  <div className="rounded-sm bg-elevated/70 px-2.5 py-1.5 font-mono text-[11px] text-text-primary">
+                    {parsedHeaders.requestLine}
+                  </div>
+                )}
+                {parsedHeaders.headers.map((header, index) => (
+                  <div key={header.name + "-" + index} className="grid grid-cols-[minmax(0,8rem)_1fr] gap-2 px-2.5 py-1">
+                    <span className="truncate font-mono text-[11px] text-text-secondary">{header.name}</span>
+                    <span className="min-w-0 break-all font-mono text-[11px] text-text-primary">{header.value}</span>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-xs text-text-tertiary">请求头为空。</p>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-sm border border-dashed border-border bg-elevated/40 px-3 py-4 text-center">
+            <p className="text-xs font-medium text-text-secondary">此连接不是 HTTP 请求</p>
+            <p className="mt-0.5 text-xs text-text-tertiary">无可用 HTTP Header</p>
+          </div>
+        )}
+      </Section>
+      <NotesSection notes={request.notes} />
+    </>
+  );
+}
+
+function TimingTab({
+  request,
+  timing,
+  duration,
+  setupDuration,
+}: {
+  request: RequestItem;
+  timing: ReturnType<typeof buildRequestTimingWaterfall>;
+  duration: number | undefined;
+  setupDuration: number | undefined;
+}) {
+  return (
+    <>
+      <Section title="总览">
+        <Row label="总耗时" value={formatDuration(duration)} mono />
+        <Row label="连接建立" value={formatDuration(setupDuration)} mono />
+        {request.timingRecords && request.timingRecords.length > 0 && (
+          <Row label="阶段数" value={String(request.timingRecords.length)} mono />
+        )}
       </Section>
       <Section title="Timing Waterfall">
         {timing.phases.length > 0 ? (
           <div className="space-y-2" aria-label="请求连接阶段瀑布图">
             {timing.phases.map((phase, index) => (
-              <div key={`${phase.name}-${index}`} className="grid grid-cols-[7rem_1fr_4rem] items-center gap-2">
+              <div key={phase.name + "-" + index} className="grid grid-cols-[7rem_1fr_4rem] items-center gap-2">
                 <span className="truncate text-xs text-text-secondary" title={phase.name}>{phase.name}</span>
                 <div className="relative h-2.5 overflow-hidden rounded-pill bg-elevated" aria-hidden="true">
                   <span
                     className="absolute h-full rounded-pill bg-accent"
-                    style={{ left: `${phase.offsetPercent}%`, width: `${Math.min(phase.widthPercent, 100 - phase.offsetPercent)}%` }}
+                    style={{ left: phase.offsetPercent + "%", width: Math.min(phase.widthPercent, 100 - phase.offsetPercent) + "%" }}
                   />
                 </div>
                 <span className="text-right font-mono text-[11px] tabular-nums text-text-primary">
@@ -469,30 +789,66 @@ export function RequestDetails({ request }: { request: RequestItem }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-text-tertiary">此请求没有可用的连接阶段数据。</p>
+          <p className="text-xs text-text-tertiary">此请求没有可用的连接阶段数据。实际有什么阶段就展示什么，不会虚构。</p>
         )}
       </Section>
-      {request.requestHeader && (
-        <Section title="请求头">
-          <div className="mb-2 flex justify-end">
-            <Button size="sm" variant="secondary" onClick={() => copy("headers", request.requestHeader ?? "")}>
-              {copyState === "headers" ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
-              {copyState === "headers" ? "已复制" : "复制请求头"}
-            </Button>
-          </div>
-          <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-surface/60 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
-            {request.requestHeader}
-          </pre>
-        </Section>
-      )}
-      <p className="min-h-4 text-xs text-danger" aria-live="polite">
-        {copyState === "error" ? "复制失败，请检查浏览器剪贴板权限。" : ""}
-      </p>
-    </div>
+    </>
   );
 }
 
-function CopyRow({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+// ── Notes (处理记录) ───────────────────────────────────────────
+
+const NOTE_VARIANTS: Record<string, "success" | "warning" | "danger" | "muted" | "info" | "purple"> = {
+  Rule: "purple",
+  DNS: "warning",
+  MITM: "info",
+  Script: "info",
+  Rewrite: "info",
+  Proxy: "success",
+  QUIC: "info",
+  STUN: "warning",
+  HTTP: "success",
+};
+
+function NotesSection({ notes }: { notes?: string[] }) {
+  if (!notes || notes.length === 0) {
+    return (
+      <Section title="处理记录">
+        <p className="text-xs text-text-tertiary">无处理记录（notes 为空）。</p>
+      </Section>
+    );
+  }
+  return (
+    <Section title="处理记录">
+      <ul className="space-y-1.5">
+        {notes.map((note, index) => {
+          const { tag, text } = noteTag(note);
+          const variant = (tag ? NOTE_VARIANTS[tag] : undefined) ?? "muted";
+          return (
+            <li key={index} className="flex items-start gap-2">
+              {tag ? <Badge variant={variant}>{tag}</Badge> : null}
+              <span className="min-w-0 break-words text-xs text-text-secondary">{text}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
+  );
+}
+
+// ── Shared inspector primitives ────────────────────────────────
+
+function CopyRow({
+  label,
+  value,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
   return (
     <div className="flex items-start gap-3">
       <span className="shrink-0 text-xs text-text-secondary">{label}</span>
@@ -502,13 +858,6 @@ function CopyRow({ label, value, copied, onCopy }: { label: string; value: strin
       </Button>
     </div>
   );
-}
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -524,7 +873,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   return (
     <div className="flex items-start justify-between gap-4">
       <span className="shrink-0 text-xs text-text-secondary">{label}</span>
-      <span className={`min-w-0 break-all text-right text-[13px] text-text-primary ${mono ? "font-mono text-xs" : ""}`}>
+      <span className={"min-w-0 break-all text-right text-[13px] text-text-primary " + (mono ? "font-mono text-xs" : "")}>
         {value}
       </span>
     </div>
