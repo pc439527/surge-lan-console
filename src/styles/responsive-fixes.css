@@ -1,0 +1,26 @@
+/* Cascade fixes that must load after responsive.css. */
+
+@container page (max-width: 819px) {
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > * {
+    border-top: 0 !important;
+    border-left: 0 !important;
+  }
+
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > :nth-child(even) {
+    border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
+  }
+
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > :nth-child(n + 3) {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
+  }
+}
+
+@container page (max-width: 479px) {
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > * {
+    border-left: 0 !important;
+  }
+
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > :nth-child(n + 2) {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
+  }
+}
