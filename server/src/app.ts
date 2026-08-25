@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { BackupService } from "./backup-service.js";
 import { AppDatabase } from "./database.js";
 import { AuthError, AuthService } from "./auth-service.js";
 import { ConnectionService, type ConnectionInput } from "./connection-service.js";
@@ -72,6 +73,7 @@ function ensureOrigin(request: IncomingMessage): void {
   try { if (new URL(origin).host !== request.headers.host) throw new Error("origin mismatch"); } catch { throw new CoreError("origin_rejected", 403, "请求来源校验失败。"); }
 }
 function requireSession(sessions: SessionStore, token: string | null): SessionInfo { const session = sessions.get(token); if (!session) throw new CoreError("session_required", 401, "控制台已锁定，请重新输入数据密码。"); return session; }
+function requireBackups(backups: BackupService | null): BackupService { if (!backups) throw new CoreError("backup_unavailable", 409, "当前数据库不支持持久化备份。"); return backups; }
 function asConnectionInput(body: Record<string, unknown>): ConnectionInput {
   const platform = typeof body.platform === "string" ? body.platform : null;
   return { ...(typeof body.id === "string" ? { id: body.id } : {}), name: stringField(body, "name"), protocol: body.protocol === "https" ? "https" : "http", host: stringField(body, "host"), port: typeof body.port === "number" ? body.port : Number(body.port), platform: platform === "ios" || platform === "tvos" || platform === "macos" ? platform : null, ...(typeof body.apiKey === "string" ? { apiKey: body.apiKey } : {}) };
@@ -90,6 +92,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const scheduler = new SchedulerService(database, connections, surge, events, runtimeVault);
   const trafficAnalytics = new TrafficAnalyticsService(database, now);
   const profileHistory = new ProfileHistoryService(database, now);
+  const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
 
   const server = createServer(async (request, response) => {
@@ -141,6 +144,17 @@ export function createCoreApp(options: CoreAppOptions) {
       const jobRunMatch = pathname.match(/^\/api\/automation\/jobs\/([^/]+)\/run$/);
       if (method === "POST" && jobRunMatch) { requireSession(sessions, sessionToken); sendJson(response, 200, await scheduler.runNow(decodeURIComponent(jobRunMatch[1] ?? ""))); return; }
       if (method === "GET" && pathname === "/api/automation/runs") { requireSession(sessions, sessionToken); sendJson(response, 200, scheduler.listRuns(Number(url.searchParams.get("limit")) || 100)); return; }
+
+      if (method === "GET" && pathname === "/api/backups") { requireSession(sessions, sessionToken); sendJson(response, 200, requireBackups(backups).list()); return; }
+      if (method === "POST" && pathname === "/api/backups") { requireSession(sessions, sessionToken); sendJson(response, 201, await requireBackups(backups).create("manual")); return; }
+      if (method === "POST" && pathname === "/api/backups/validate") {
+        requireSession(sessions, sessionToken);
+        const body = await readJson(request);
+        const id = stringField(body, "id").trim();
+        if (!id) throw new CoreError("backup_id_required", 400, "备份校验需要 id。");
+        sendJson(response, 200, await requireBackups(backups).validate(id));
+        return;
+      }
 
       if (method === "GET" && pathname === "/api/analytics/traffic") {
         requireSession(sessions, sessionToken);
