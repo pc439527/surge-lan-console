@@ -31,60 +31,37 @@ const trafficAnalyticsSchema = z.object({
   points: z.array(trafficRollupPointSchema),
 });
 const healthRangeSchema = z.enum(["24h", "7d"]);
-const dnsTrendPointSchema = z.object({
-  sampledAt: z.string(),
-  domain: z.string(),
-  delayMs: z.number(),
-  apiLatencyMs: z.number().nullable(),
-});
-const dnsAnalyticsSchema = z.object({
-  connectionId: z.string(),
-  range: healthRangeSchema,
-  points: z.array(dnsTrendPointSchema),
-});
+const dnsTrendPointSchema = z.object({ sampledAt: z.string(), domain: z.string(), delayMs: z.number(), apiLatencyMs: z.number().nullable() });
+const dnsAnalyticsSchema = z.object({ connectionId: z.string(), range: healthRangeSchema, points: z.array(dnsTrendPointSchema) });
 const policyHealthStatSchema = z.object({
-  key: z.string(),
-  name: z.string(),
-  groups: z.array(z.string()),
-  sampleCount: z.number(),
-  reachableCount: z.number(),
-  availabilityPercent: z.number(),
-  p50Ms: z.number().nullable(),
-  p95Ms: z.number().nullable(),
-  lastLatencyMs: z.number().nullable(),
-  lastReachable: z.boolean(),
-  lastSampledAt: z.string(),
+  key: z.string(), name: z.string(), groups: z.array(z.string()), sampleCount: z.number(), reachableCount: z.number(),
+  availabilityPercent: z.number(), p50Ms: z.number().nullable(), p95Ms: z.number().nullable(), lastLatencyMs: z.number().nullable(),
+  lastReachable: z.boolean(), lastSampledAt: z.string(),
 });
-const policyHealthAnalyticsSchema = z.object({
+const policyHealthAnalyticsSchema = z.object({ connectionId: z.string(), range: healthRangeSchema, nodes: z.array(policyHealthStatSchema) });
+const errorTrendPointSchema = z.object({
+  bucketStart: z.string(),
+  surgeWarnings: z.number(),
+  surgeErrors: z.number(),
+  jobFailures: z.number(),
+  total: z.number(),
+});
+const errorAnalyticsSchema = z.object({
   connectionId: z.string(),
   range: healthRangeSchema,
-  nodes: z.array(policyHealthStatSchema),
+  points: z.array(errorTrendPointSchema),
+  notificationFailuresGlobal: z.number(),
 });
 const profileSnapshotSchema = z.object({
-  id: z.string(),
-  connectionId: z.string(),
-  sha256: z.string().length(64),
-  profileName: z.string(),
-  source: z.enum(["scheduled", "manual", "reload"]),
-  capturedAt: z.string(),
-  sizeBytes: z.number(),
+  id: z.string(), connectionId: z.string(), sha256: z.string().length(64), profileName: z.string(),
+  source: z.enum(["scheduled", "manual", "reload"]), capturedAt: z.string(), sizeBytes: z.number(),
 });
 const profileSnapshotDetailSchema = profileSnapshotSchema.extend({ content: z.string() });
 const profileCaptureSchema = z.object({ snapshot: profileSnapshotSchema, created: z.boolean() });
-const profileDiffChunkSchema = z.object({
-  oldStartLine: z.number(),
-  newStartLine: z.number(),
-  removed: z.array(z.string()),
-  added: z.array(z.string()),
-});
+const profileDiffChunkSchema = z.object({ oldStartLine: z.number(), newStartLine: z.number(), removed: z.array(z.string()), added: z.array(z.string()) });
 const profileDiffSchema = z.object({
-  from: profileSnapshotSchema,
-  to: profileSnapshotSchema,
-  changed: z.boolean(),
-  addedLines: z.number(),
-  removedLines: z.number(),
-  truncated: z.boolean(),
-  chunks: z.array(profileDiffChunkSchema),
+  from: profileSnapshotSchema, to: profileSnapshotSchema, changed: z.boolean(), addedLines: z.number(), removedLines: z.number(),
+  truncated: z.boolean(), chunks: z.array(profileDiffChunkSchema),
 });
 
 export type CoreAuthState = z.infer<typeof authStateSchema>;
@@ -106,6 +83,8 @@ export type DnsTrendPoint = z.infer<typeof dnsTrendPointSchema>;
 export type DnsAnalytics = z.infer<typeof dnsAnalyticsSchema>;
 export type PolicyHealthStat = z.infer<typeof policyHealthStatSchema>;
 export type PolicyHealthAnalytics = z.infer<typeof policyHealthAnalyticsSchema>;
+export type ErrorTrendPoint = z.infer<typeof errorTrendPointSchema>;
+export type ErrorAnalytics = z.infer<typeof errorAnalyticsSchema>;
 export type ProfileSnapshot = z.infer<typeof profileSnapshotSchema>;
 export type ProfileSnapshotDetail = z.infer<typeof profileSnapshotDetailSchema>;
 export type ProfileCaptureResult = z.infer<typeof profileCaptureSchema>;
@@ -155,19 +134,13 @@ export const coreApi = {
   createBackup: (): Promise<BackupValidation> => request(() => client.post("/backups", undefined, { timeout: 60_000 }), backupValidationSchema),
   validateBackup: (id: string): Promise<BackupValidation> => request(() => client.post("/backups/validate", { id }, { timeout: 60_000 }), backupValidationSchema),
 
-  getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> =>
-    request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
-  getDnsAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<DnsAnalytics> =>
-    request(() => client.get("/analytics/dns", { params: { connectionId, range } }), dnsAnalyticsSchema),
-  getPolicyHealthAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<PolicyHealthAnalytics> =>
-    request(() => client.get("/analytics/policy-health", { params: { connectionId, range } }), policyHealthAnalyticsSchema),
+  getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> => request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
+  getDnsAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<DnsAnalytics> => request(() => client.get("/analytics/dns", { params: { connectionId, range } }), dnsAnalyticsSchema),
+  getPolicyHealthAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<PolicyHealthAnalytics> => request(() => client.get("/analytics/policy-health", { params: { connectionId, range } }), policyHealthAnalyticsSchema),
+  getErrorAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<ErrorAnalytics> => request(() => client.get("/analytics/errors", { params: { connectionId, range } }), errorAnalyticsSchema),
 
-  listProfileSnapshots: (connectionId: string, limit = 100): Promise<ProfileSnapshot[]> =>
-    request(() => client.get("/profile-history", { params: { connectionId, limit } }), z.array(profileSnapshotSchema)),
-  captureProfileSnapshot: (connectionId: string): Promise<ProfileCaptureResult> =>
-    request(() => client.post("/profile-history/capture", { connectionId }), profileCaptureSchema),
-  getProfileSnapshot: (connectionId: string, id: string): Promise<ProfileSnapshotDetail> =>
-    request(() => client.get(`/profile-history/${encodeURIComponent(id)}`, { params: { connectionId } }), profileSnapshotDetailSchema),
-  diffProfileSnapshots: (connectionId: string, from: string, to: string): Promise<ProfileDiff> =>
-    request(() => client.get("/profile-history/diff", { params: { connectionId, from, to } }), profileDiffSchema),
+  listProfileSnapshots: (connectionId: string, limit = 100): Promise<ProfileSnapshot[]> => request(() => client.get("/profile-history", { params: { connectionId, limit } }), z.array(profileSnapshotSchema)),
+  captureProfileSnapshot: (connectionId: string): Promise<ProfileCaptureResult> => request(() => client.post("/profile-history/capture", { connectionId }), profileCaptureSchema),
+  getProfileSnapshot: (connectionId: string, id: string): Promise<ProfileSnapshotDetail> => request(() => client.get(`/profile-history/${encodeURIComponent(id)}`, { params: { connectionId } }), profileSnapshotDetailSchema),
+  diffProfileSnapshots: (connectionId: string, from: string, to: string): Promise<ProfileDiff> => request(() => client.get("/profile-history/diff", { params: { connectionId, from, to } }), profileDiffSchema),
 };
