@@ -13,6 +13,7 @@ import { parsePolicyNodeHealth } from "./policy-health.js";
 import { RetentionService } from "./retention-service.js";
 import type { RuntimeVault } from "./runtime-vault.js";
 import type { SurgeTransport, SurgeProxyResult } from "./surge-transport.js";
+import { TrafficAnalyticsService } from "./traffic-analytics.js";
 
 export type JobType = "device-heartbeat" | "metrics" | "events" | "dns-health" | "node-health" | "profile-reload" | "daily-digest";
 
@@ -79,6 +80,7 @@ export class SchedulerService {
   private timer: NodeJS.Timeout | null = null;
   private readonly running = new Set<string>();
   private readonly retention: RetentionService;
+  private readonly trafficAnalytics: TrafficAnalyticsService;
   private announcedUnlock = false;
 
   constructor(
@@ -89,6 +91,7 @@ export class SchedulerService {
     private readonly runtimeVault: RuntimeVault,
   ) {
     this.retention = new RetentionService(database);
+    this.trafficAnalytics = new TrafficAnalyticsService(database);
   }
 
   start(): void {
@@ -208,7 +211,7 @@ export class SchedulerService {
       const credentials = this.connections.getCredentials(job.connection_id, key);
       switch (job.type) {
         case "device-heartbeat": await this.runHeartbeat(job.connection_id, credentials); return;
-        case "metrics": await this.collect(job.connection_id, "metrics", credentials, "/v1/traffic"); return;
+        case "metrics": await this.collectMetrics(job.connection_id, credentials); return;
         case "events": await this.collectEvents(job.connection_id, credentials); return;
         case "dns-health": await this.runDnsHealth(job, credentials); return;
         case "node-health": await this.runNodeHealth(job.connection_id, credentials); return;
@@ -351,10 +354,12 @@ export class SchedulerService {
     }
   }
 
-  private async collect(connectionId: string, kind: string, credentials: Parameters<SurgeTransport["request"]>[0], path: string): Promise<void> {
-    const result = await this.surge.request(credentials, "GET", path);
-    if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("collector_http_error", 502, `${kind} Collector 返回 HTTP ${result.statusCode}。`);
-    this.storeSample(connectionId, kind, result.body);
+  private async collectMetrics(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
+    const result = await this.surge.request(credentials, "GET", "/v1/traffic");
+    if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("collector_http_error", 502, `metrics Collector 返回 HTTP ${result.statusCode}。`);
+    const sampledAt = Date.now();
+    this.storeSample(connectionId, "metrics", result.body, sampledAt);
+    this.trafficAnalytics.ingest(connectionId, result.body, sampledAt);
   }
 
   private async collectEvents(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
@@ -428,11 +433,11 @@ export class SchedulerService {
     `, connectionId, JSON.stringify(keys.slice(-EVENT_CURSOR_LIMIT)), new Date().toISOString());
   }
 
-  private storeSample(connectionId: string, kind: string, body: Buffer): void {
+  private storeSample(connectionId: string, kind: string, body: Buffer, sampledAtMs = Date.now()): void {
     const text = body.toString("utf8");
     this.database.execute(`
       INSERT INTO collector_samples(id, connection_id, kind, value_json, sampled_at) VALUES (?, ?, ?, ?, ?)
-    `, `sample-${randomUUID()}`, connectionId, kind, text.slice(0, 2_000_000), new Date().toISOString());
+    `, `sample-${randomUUID()}`, connectionId, kind, text.slice(0, 2_000_000), new Date(sampledAtMs).toISOString());
   }
 
   private runDailyDigest(): void {
