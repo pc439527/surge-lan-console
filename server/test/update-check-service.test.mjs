@@ -32,6 +32,10 @@ test("manifest update checker compares commits and caches remote metadata", asyn
   assert.equal(outdated.latest?.version, "0.6.0");
   assert.equal(calls, 1);
 
+  const unknownCommit = await service.check({ version: "0.6.0", commit: "unknown", branch: "main" });
+  assert.equal(unknownCommit.status, "unknown");
+  assert.equal(calls, 1);
+
   const cached = await service.check({ version: "0.6.0", commit: "1234567", branch: "main" });
   assert.equal(cached.status, "current");
   assert.equal(calls, 1);
