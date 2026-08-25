@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Globe, Loader2, RefreshCw, Trash2, Zap } from "lucide-react";
+import { CheckCircle2, Globe, Loader2, RefreshCw, Trash2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { MetricStrip } from "@/components/ui/MetricStrip";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
@@ -23,13 +25,6 @@ import { normalizeDns, type NormalizedDns } from "@/api/normalize";
 import type { DnsCacheEntry, DnsLocalEntry } from "@/api/types";
 import { cn } from "@/lib/cn";
 
-/**
- * DNS (OPTIMIZATION_PLAN Task 06, §20–24).
- * Shows BOTH dynamic cache and local records (normalized via normalizeDns).
- * expiresTime is rendered defensively — its unit is not guaranteed across
- * platforms, so ambiguous values show "—" instead of a false "已过期".
- */
-
 type Tab = "dynamic" | "local";
 
 export function DnsPage() {
@@ -38,7 +33,9 @@ export function DnsPage() {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [domain, setDomain] = useState("");
+  const [testedDomain, setTestedDomain] = useState("");
   const [tab, setTab] = useState<Tab>("dynamic");
+  const [search, setSearch] = useState("");
 
   const dnsQuery = useQuery<NormalizedDns>({
     queryKey: surgeKeys.dns(connectionId),
@@ -57,14 +54,14 @@ export function DnsPage() {
     onError: () => toast.error("清除 DNS 缓存失败"),
   });
 
-  // PROJECT_SPEC §6.7 — DNS Test: POST /v1/test/dns_delay {domain}
   const dnsTest = useMutation({
     mutationFn: (d: string) => surgeClient!.testDnsDelay(d),
-    onSuccess: () => toast.success("DNS 测试完成"),
+    onSuccess: (_data, variables) => {
+      setTestedDomain(variables);
+      toast.success("DNS 测试完成");
+    },
     onError: () => toast.error("DNS 测试失败"),
   });
-
-  const [search, setSearch] = useState("");
 
   const filteredCache = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -80,39 +77,50 @@ export function DnsPage() {
     return entries.filter((e) => (e.domain ?? "").toLowerCase().includes(q) || (e.data ?? "").toLowerCase().includes(q));
   }, [dnsQuery.data, search]);
 
+  const serverCount = useMemo(() => {
+    const servers = new Set<string>();
+    for (const entry of dnsQuery.data?.dnsCache ?? []) if (entry.server) servers.add(entry.server);
+    for (const entry of dnsQuery.data?.local ?? []) if (entry.server) servers.add(entry.server);
+    return servers.size;
+  }, [dnsQuery.data]);
+
   if (!client) return <NoClientNotice page="DNS" />;
 
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-[26px] font-semibold text-text-primary">DNS</h1>
-          <p className="mt-0.5 text-sm text-text-secondary">
-            动态缓存 {(dnsQuery.data?.dnsCache ?? []).length} · 本地记录 {(dnsQuery.data?.local ?? []).length}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => queryClient.invalidateQueries({ queryKey: surgeKeys.dns(connectionId) })}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            刷新
-          </Button>
-          <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
-            <Trash2 className="h-3.5 w-3.5" />
-            清除 DNS
-          </Button>
-        </div>
-      </header>
+  const latestTest = dnsTest.data !== undefined ? formatDnsResult(dnsTest.data) : "—";
 
-      {/* T10: desktop = list (flexible) + test (fixed 300–340px); <1360px stacks. */}
-      <div className="grid items-start gap-4 min-[1360px]:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
-        <Card className="min-w-0">
-          <CardHeader className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex rounded-sm border border-border bg-surface p-0.5">
+  return (
+    <div className="space-y-5 lg:space-y-6">
+      <PageHeader
+        title="DNS"
+        description="查看动态缓存、本地记录和解析链路，并对指定域名执行实时诊断。"
+        actions={(
+          <>
+            <Button variant="secondary" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: surgeKeys.dns(connectionId) })}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              刷新
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
+              <Trash2 className="h-3.5 w-3.5" />
+              清除缓存
+            </Button>
+          </>
+        )}
+      />
+
+      <MetricStrip
+        items={[
+          { label: "动态缓存", value: dnsQuery.data?.dnsCache.length ?? 0, detail: "缓存条目", tone: "accent" },
+          { label: "本地记录", value: dnsQuery.data?.local.length ?? 0, detail: "静态映射", tone: "muted" },
+          { label: "DNS 服务器", value: serverCount, detail: "当前可见来源", tone: serverCount > 0 ? "success" : "muted" },
+          { label: "最近测试", value: latestTest, detail: testedDomain || "尚未执行", tone: dnsTest.data !== undefined ? "success" : "muted" },
+        ]}
+      />
+
+      <div className="grid items-start gap-4 min-[1360px]:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="space-y-3 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex rounded-[12px] border border-border bg-surface p-0.5">
                 {([
                   { value: "dynamic", label: `动态缓存 ${dnsQuery.data?.dnsCache.length ?? 0}` },
                   { value: "local", label: `本地记录 ${dnsQuery.data?.local.length ?? 0}` },
@@ -122,7 +130,7 @@ export function DnsPage() {
                     type="button"
                     onClick={() => setTab(t.value)}
                     className={cn(
-                      "rounded-xs px-3 py-1.5 text-xs font-medium transition-colors duration-hover",
+                      "touch-target rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors duration-hover",
                       tab === t.value ? "bg-accent/12 text-accent" : "text-text-secondary hover:text-text-primary",
                     )}
                   >
@@ -130,7 +138,7 @@ export function DnsPage() {
                   </button>
                 ))}
               </div>
-              <div className="relative w-56">
+              <div className="relative w-full sm:w-64">
                 <Globe className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-tertiary" />
                 <Input className="pl-8" placeholder="搜索域名或 IP…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
@@ -163,20 +171,18 @@ export function DnsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredCache.map((entry, i) => (
-                          <DynamicRow key={`${entry.domain}-${i}`} entry={entry} />
-                        ))}
+                        {filteredCache.map((entry, i) => <DynamicRow key={`${entry.domain}-${i}`} entry={entry} />)}
                       </tbody>
                     </table>
                   </div>
                   <div className="space-y-2 md:hidden">
                     {filteredCache.map((entry, i) => (
-                      <div key={`${entry.domain}-${i}`} className="rounded-sm border border-border bg-elevated/50 px-3 py-2.5">
+                      <div key={`${entry.domain}-${i}`} className="rounded-[14px] bg-elevated/55 px-3 py-3">
                         <div className="flex items-center justify-between gap-2">
                           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-primary">{entry.domain}</span>
                           <Badge variant="muted">{formatExpiry(entry.expiresTime)}</Badge>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] text-text-tertiary">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-text-tertiary">
                           <span>{(entry.data ?? []).join(", ") || "—"}</span>
                           {entry.server && <span>· {entry.server}</span>}
                           {entry.timeCost !== undefined && <span>· {entry.timeCost}ms</span>}
@@ -201,27 +207,25 @@ export function DnsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredLocal.map((entry, i) => (
-                      <LocalRow key={`${entry.domain}-${i}`} entry={entry} />
-                    ))}
+                    {filteredLocal.map((entry, i) => <LocalRow key={`${entry.domain}-${i}`} entry={entry} />)}
                   </tbody>
                 </table>
               </div>
             )}
           </CardContent>
-          <p className="px-5 pb-4 pt-1 text-[11px] leading-relaxed text-text-tertiary">
-            列含义：服务器 = DNS 解析来源（如 203.0.113.53）· 路径 = 解析链路 · 查询 = 单次解析耗时 · TTL = 缓存剩余时间。
+          <p className="px-5 pb-4 pt-1 text-xs leading-relaxed text-text-tertiary">
+            服务器 = DNS 解析来源 · 路径 = 解析链路 · 查询 = 单次解析耗时 · TTL = 缓存剩余时间。
           </p>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>DNS 测试</CardTitle>
+        <Card className="lg:sticky lg:top-24">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-[17px]">解析诊断</CardTitle>
+            <p className="text-xs leading-relaxed text-text-tertiary">
+              对指定域名调用 POST /v1/test/dns_delay。返回结果会先转换成可读延迟，不直接展示难读的原始对象。
+            </p>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-xs text-text-tertiary">
-              对指定域名发起 DNS 解析延迟测试（POST /v1/test/dns_delay）。结果中数值小于 1 的按秒换算为毫秒显示。
-            </p>
             <div className="relative">
               <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
               <Input
@@ -230,30 +234,34 @@ export function DnsPage() {
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && domain.trim() && !dnsTest.isPending) {
-                    dnsTest.mutate(domain.trim());
-                  }
+                  if (e.key === "Enter" && domain.trim() && !dnsTest.isPending) dnsTest.mutate(domain.trim());
                 }}
               />
             </div>
-            <Button
-              className="w-full"
-              onClick={() => dnsTest.mutate(domain.trim())}
-              disabled={!domain.trim() || dnsTest.isPending}
-            >
-              {dnsTest.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Zap className="h-4 w-4" />
-              )}
-              测试延迟
+            <Button className="w-full" onClick={() => dnsTest.mutate(domain.trim())} disabled={!domain.trim() || dnsTest.isPending}>
+              {dnsTest.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+              {dnsTest.isPending ? "测试中…" : "测试 DNS 延迟"}
             </Button>
-            {dnsTest.data !== undefined && (
-              <div className="rounded-sm border border-border bg-surface/60 p-3">
-                <p className="mb-1 text-xs font-medium text-text-tertiary">结果</p>
-                <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-text-primary">
-                  {formatDnsResult(dnsTest.data)}
-                </pre>
+
+            {dnsTest.data !== undefined ? (
+              <div className="rounded-[14px] bg-surface-tertiary/55 p-3.5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    测试完成
+                  </div>
+                  <Badge variant="success">成功</Badge>
+                </div>
+                <div className="divide-y divide-border/50">
+                  <DiagnosticRow label="域名" value={testedDomain || domain.trim() || "—"} mono />
+                  <DiagnosticRow label="结果" value={formatDnsResult(dnsTest.data)} mono highlight />
+                  <DiagnosticRow label="接口" value="POST /v1/test/dns_delay" mono />
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[14px] border border-dashed border-border px-4 py-6 text-center">
+                <p className="text-sm text-text-secondary">尚未执行 DNS 测试</p>
+                <p className="mt-1 text-xs text-text-tertiary">输入域名后即可查看解析延迟。</p>
               </div>
             )}
           </CardContent>
@@ -264,14 +272,10 @@ export function DnsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>清除 DNS 缓存？</DialogTitle>
-            <DialogDescription>
-              这将清除设备上的所有 DNS 缓存条目，此操作不可撤销。
-            </DialogDescription>
+            <DialogDescription>这将清除设备上的所有 DNS 缓存条目，此操作不可撤销。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
-              取消
-            </Button>
+            <Button variant="ghost" onClick={() => setConfirmOpen(false)}>取消</Button>
             <Button variant="destructive" onClick={() => flush.mutate()} disabled={flush.isPending}>
               {flush.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               清除
@@ -283,33 +287,36 @@ export function DnsPage() {
   );
 }
 
+function DiagnosticRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+      <span className="shrink-0 text-xs text-text-secondary">{label}</span>
+      <span className={cn("min-w-0 break-all text-right text-[13px] text-text-primary", mono && "font-mono text-xs", highlight && "font-semibold text-success")}>{value}</span>
+    </div>
+  );
+}
+
 function DynamicRow({ entry }: { entry: DnsCacheEntry }) {
   return (
-    <tr className="border-b border-border/50">
+    <tr className="border-b border-border/50 last:border-b-0 hover:bg-elevated/35">
       <td className="px-3 py-2.5 text-[13px] text-text-primary">{entry.domain}</td>
       <td className="px-3 py-2.5">
         <div className="space-y-0.5">
-          {(entry.data ?? []).map((ip, i) => (
-            <span key={i} className="block font-mono text-xs text-text-secondary">{ip}</span>
-          ))}
+          {(entry.data ?? []).map((ip, i) => <span key={i} className="block font-mono text-xs text-text-secondary">{ip}</span>)}
           {(entry.data ?? []).length === 0 && <span className="font-mono text-xs text-text-tertiary">—</span>}
         </div>
       </td>
       <td className="px-3 py-2.5 font-mono text-xs text-text-tertiary">{entry.server ?? "—"}</td>
       <td className="px-3 py-2.5 font-mono text-xs text-text-tertiary">{entry.path ?? "—"}</td>
-      <td className="px-3 py-2.5 font-mono text-xs text-text-tertiary">
-        {entry.timeCost === undefined ? "—" : `${entry.timeCost}ms`}
-      </td>
-      <td className="px-3 py-2.5">
-        <Badge variant="muted">{formatExpiry(entry.expiresTime)}</Badge>
-      </td>
+      <td className="px-3 py-2.5 font-mono text-xs text-text-tertiary">{entry.timeCost === undefined ? "—" : `${entry.timeCost}ms`}</td>
+      <td className="px-3 py-2.5"><Badge variant="muted">{formatExpiry(entry.expiresTime)}</Badge></td>
     </tr>
   );
 }
 
 function LocalRow({ entry }: { entry: DnsLocalEntry }) {
   return (
-    <tr className="border-b border-border/50">
+    <tr className="border-b border-border/50 last:border-b-0 hover:bg-elevated/35">
       <td className="px-3 py-2.5 text-[13px] text-text-primary">{entry.domain ?? "—"}</td>
       <td className="px-3 py-2.5 font-mono text-xs text-text-secondary">{entry.data ?? "—"}</td>
       <td className="px-3 py-2.5 text-xs text-text-secondary">{entry.source ?? "—"}</td>
@@ -319,11 +326,6 @@ function LocalRow({ entry }: { entry: DnsLocalEntry }) {
   );
 }
 
-/**
- * expiresTime semantics are NOT guaranteed across platforms (epoch seconds /
- * milliseconds / TTL seconds). Until verified against the real device, render
- * "—" for anything ambiguous instead of falsely claiming "已过期" (§23).
- */
 function formatExpiry(ts: number | undefined): string {
   if (ts === undefined || !Number.isFinite(ts)) return "—";
   const diff = ts - Date.now();
@@ -331,13 +333,6 @@ function formatExpiry(ts: number | undefined): string {
   return Math.max(1, Math.round(diff / 1000)) + "s";
 }
 
-/**
- * 把 DNS 延迟探测结果渲染为可读文本（v0.3.0 解释化）。
- *
- * Surge 各平台返回的单位不一致：部分直接给毫秒，部分给秒（如 0.02324），
- * 甚至以字符串返回。规则：数值 < 1 视为秒，换算为毫秒显示；带单位字符串
- * （如 "23ms"）原样保留；无法解析的值返回 null 让调用方展示原文。
- */
 function formatDnsResult(data: unknown): string {
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
@@ -345,13 +340,9 @@ function formatDnsResult(data: unknown): string {
       const ms = latencyToMsText(obj[key]);
       if (ms !== null) return ms;
     }
-    if (typeof obj.result === "string") {
-      return latencyToMsText(obj.result) ?? obj.result;
-    }
+    if (typeof obj.result === "string") return latencyToMsText(obj.result) ?? obj.result;
   }
-  if (typeof data === "string") {
-    return latencyToMsText(data) ?? data;
-  }
+  if (typeof data === "string") return latencyToMsText(data) ?? data;
   return JSON.stringify(data, null, 2);
 }
 
@@ -362,9 +353,7 @@ function latencyToMsText(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
     const numeric = Number.parseFloat(trimmed);
-    if (Number.isFinite(numeric)) {
-      return numeric < 1 ? `${Math.round(numeric * 1000)}ms` : `${Math.round(numeric)}ms`;
-    }
+    if (Number.isFinite(numeric)) return numeric < 1 ? `${Math.round(numeric * 1000)}ms` : `${Math.round(numeric)}ms`;
   }
   return null;
 }

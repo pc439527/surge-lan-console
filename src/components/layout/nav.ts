@@ -36,8 +36,8 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "概览",
     items: [
       { to: "/", label: "仪表盘", icon: Gauge },
-      { to: "/fleet", label: "Fleet Console", icon: Network },
-      { to: "/health", label: "Health Center", icon: Stethoscope },
+      { to: "/fleet", label: "设备总览", icon: Network },
+      { to: "/health", label: "健康中心", icon: Stethoscope },
     ],
   },
   {
