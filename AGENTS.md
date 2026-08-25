@@ -30,230 +30,146 @@
 
 ### 依赖原则
 
-- 不要仅为一个简单能力引入第三方包；优先使用项目已有依赖和 Node 标准库。
-- 新增依赖必须说明原因，并确保 `pnpm-lock.yaml` 同步更新。
-- Local Core 当前刻意使用 Node 内置 `http`、`crypto`、`node:sqlite`，不要在没有明确收益的情况下替换为框架或原生扩展。
+- 优先使用项目已有依赖和 Node 标准库；不要仅为一个简单能力引入第三方包。
+- 新增依赖必须说明原因，并同步 `pnpm-lock.yaml`。
+- Local Core 使用 Node 内置 `http/https`、`crypto`、`dns`、`node:sqlite`，没有明确收益不得替换。
 
 ## 2. 架构
 
-### Web
-
 ```text
-src/
-├── app/
-├── api/
-├── features/
-├── components/
-├── stores/
-├── hooks/
-├── lib/
-├── styles/
-└── types/
+Web (React)
+  ↓ /api
+Local Core (Node 22)
+  ├─ Auth / Session / Runtime Vault
+  ├─ SQLite / Migrations / Secret Vault
+  ├─ Connections / Surge Proxy / X-Key Injection
+  ├─ Event Bus / Notification Engine / Bark
+  ├─ Scheduler / Collectors / Job Runs
+  └─ Phase 15: Analytics / Backup / Config History
 ```
 
-### Local Core
-
-```text
-server/
-├── src/
-│   ├── index.ts
-│   ├── app.ts
-│   ├── config.ts
-│   ├── database.ts
-│   ├── auth-service.ts
-│   ├── security.ts
-│   └── session-store.ts
-├── test/
-└── Dockerfile
-```
-
-Local Core 负责：
-
-```text
-/api/auth/*
-SQLite
-Secret Vault
-Session
-未来：Connections / Surge Proxy / Scheduler / Notifications / Collectors / Backup
-```
-
-Web 不得直接打开 SQLite 文件，不得在浏览器中实现密码校验或 Secret 解密。
+Web 不得直接打开 SQLite，不得实现密码校验或 Secret 解密。浏览器所有真实 Surge 请求仍通过 `SurgeClient` abstraction，但 transport 必须指向 Core Proxy。
 
 ## 3. SurgeClient 规范
 
-当前浏览器 Surge 链路仍必须经过 `SurgeClient`，禁止页面中直接 `axios.get(...)`。
-
-统一接口：
-
-```ts
-class SurgeClient {
-  testConnection()
-  getFeatures()
-  setFeature()
-  getOutboundMode()
-  setOutboundMode()
-  getPolicies()
-  getPolicyGroups()
-  getPolicyTestResults()
-  testPolicies()
-  selectPolicy()
-  getRecentRequests()
-  getActiveRequests()
-  killRequest()
-  getTraffic()
-  getEvents()
-  getRules()
-  getDnsCache()
-  flushDns()
-  testDnsDelay()
-  getModules()
-  updateModules()
-  getScripts()
-  evaluateScript()
-  runCronScript()
-  getCurrentProfile()
-  reloadProfile()
-  getMetrics()
-}
-```
-
-认证固定使用 `X-Key` Header。
-
-### Phase 12 之后
-
-浏览器不得再直接持有 Surge API Key。届时前端仍使用统一 Client abstraction，但实际请求改为：
+- React 组件禁止直接调用 Axios 请求 Surge。
+- 统一使用 `SurgeClient` 方法。
+- Phase 12+ 实际链路固定为：
 
 ```text
-Web → /api/surge/:connectionId/* → Core → Surge HTTP API
+Web → /api/surge/:connectionId/v1/* → Core → registered LAN Surge → X-Key injected by Core
 ```
 
-Core 必须从 SQLite 中解析 connectionId，并注入解密后的 X-Key；禁止客户端传任意目标 URL/IP 形成开放代理。
+- 浏览器不得读取解密后的 Surge API Key。
+- Core Proxy 只允许 SQLite 已登记连接，且目标解析结果必须全部属于允许的 LAN 范围；禁止把任意 URL/Host 变成开放代理。
+- 浏览器传入的 `X-Key` 不可信；Core 必须以 Vault 中解密的值覆盖。
 
 ## 4. 设计约束
 
-- 遵循 `DESIGN_SYSTEM.md`：Liquid Glass 只用于导航与控制层；内容区使用 Content Material。
-- 禁止 `glass on glass`。
-- Light / Dark / System 三种主题必须完整实现为语义 Token。
-- 禁止在组件中硬编码主题颜色。
-- 圆角、间距、字号、动画遵循 Token 体系。
-- 图标统一 Lucide，单色，SF Symbols 风格，不用 emoji 图标。
-- 数据密码页属于安全入口，必须简洁，不显示 Dashboard 内容预览，不允许“跳过/稍后设置”。
+- 遵循 `DESIGN_SYSTEM.md`；Liquid Glass 只用于导航和控制层，内容区使用 Content Material。
+- 禁止 glass-on-glass。
+- Light / Dark / System 必须完整支持语义 Token。
+- 禁止 Feature 组件硬编码主题颜色。
+- 图标统一 Lucide，单色；不用 emoji 作为功能图标。
+- 数据密码页不允许“跳过/稍后设置”。
 
 ## 5. 数据与安全
 
-### 5.1 数据密码 / Vault
+### 5.1 Data Password / Vault
 
 - 禁止保存明文数据密码。
-- 当前 KDF：scrypt。
-- 当前 Secret encryption：AES-256-GCM。
-- 初始化时随机生成 256-bit DEK；SQLite 只持久化加密后的 DEK envelope。
-- 解锁后的 DEK 只允许存在 Core Session 内存。
-- Core 重启必须使全部 Session 失效。
-- Cookie 必须 `HttpOnly; SameSite=Strict`；HTTPS 时必须增加 `Secure`。
-- Unlock 必须有限速，错误信息不得泄露 Vault 内部结构。
-- 日志禁止输出密码、DEK、Cookie、Surge API Key、Bark Key/Token。
+- KDF：scrypt；Secret encryption：AES-256-GCM。
+- 初始化时随机生成 256-bit DEK，SQLite 仅保存加密后的 DEK envelope。
+- 解锁后的 DEK 只允许存在 **Core 进程内存**：Browser Session copy + Runtime Vault Lease；不得写磁盘、数据库、日志或返回 Web。
+- Runtime Vault Lease 用于浏览器关闭后的 Scheduler / Notification；普通 Session 超时不清它。
+- Settings「立即锁定」必须撤销全部 Browser Session，并清零 Runtime Vault Lease。
+- Core shutdown/restart 必须清零所有 DEK 内存；重启后受保护后台任务等待下一次用户解锁。
+- Cookie：`HttpOnly; SameSite=Strict`；HTTPS 时增加 `Secure`。
+- Unlock 必须限速。
+- 日志禁止输出数据密码、DEK、Cookie、Surge API Key、Bark Token URL。
 
-### 5.2 SQLite
+### 5.2 SQLite / Migration
 
-- 数据库默认目录：`./data/surge-console.db`，Docker 内为 `/data/surge-console.db`。
-- `data/` 必须保持 Git ignored。
-- Schema 变更必须通过 migration，不得启动时 DROP/重建用户数据表。
-- 使用 WAL；备份功能实现前不得直接复制活跃 DB + WAL 作为“可靠备份”。
-- Secret 字段只存 ciphertext / iv / auth tag。
+- 默认 `./data/surge-console.db`，Docker `/data/surge-console.db`。
+- `data/` 必须 Git ignored。
+- Schema 变更只能通过 migration，禁止 DROP/重建用户数据表。
+- 使用 WAL。
+- Phase 15 备份必须使用 SQLite 安全快照/一致性机制；禁止直接复制活跃 DB + WAL 冒充可靠备份。
+- Secret 表只能存 ciphertext / iv / auth tag。
 
-### 5.3 过渡期浏览器 Storage
+### 5.3 Browser Storage
 
-在 Phase 12 完成前：
+Phase 12 后：
 
-- Connection 元数据（不含 API Key）仍存 LocalStorage。
-- API Key 默认存 sessionStorage；仅用户主动勾选 Remember API Key 才存 LocalStorage。
-- 禁止 Console 输出 Key、URL Query 携带 Key、Git Commit 提交 Key、配置硬编码 Key。
-
-Phase 12 完成后必须迁移到 SQLite/Vault，并提供旧 Storage 一次性迁移/清理流程。
+- Connection 元数据与 Secret 的 Source of Truth 均为 Core SQLite/Vault。
+- 浏览器只允许保存非敏感 UI preference（例如 active connection id、theme）。
+- 禁止持久化真实 API Key / Bark Token。
+- 旧 `surge-lan-console.connections` 与旧 key storage 只用于一次性迁移；迁移成功后必须清理。
 
 ## 6. Core API 规范
 
-- Web 统一通过 `/api/*` 访问 Local Core。
-- 开发环境由 Vite proxy `/api` → `127.0.0.1:8787`。
-- 生产由 Nginx `/api/` → `surge-core:8787`。
-- `surge-core` Compose 服务默认禁止发布宿主机端口。
-- Core 响应 JSON 必须 `Cache-Control: no-store`。
-- Auth 错误统一 `{ error: { code, message } }`。
-- 不得出现“Core 不可用时绕过认证进入主界面”的 fallback。
-- 后续写操作必须评估 CSRF / Origin 校验；不能因为是 LAN 就默认可信所有浏览器来源。
+- Web 统一访问 `/api/*`。
+- Vite dev `/api` → `127.0.0.1:8787`；生产 Nginx `/api/` → `surge-core:8787`。
+- Core 容器默认不发布宿主机端口。
+- JSON 响应 `Cache-Control: no-store`。
+- 错误统一 `{ error: { code, message } }`。
+- Core unavailable 必须 fail closed。
+- 写操作检查 SameSite Cookie + Origin；不能因为是 LAN 就默认信任所有浏览器来源。
+- Proxy response 有大小限制和 timeout。
 
-## 7. 错误与加载
+## 7. Notification / Event 规范
 
-- Surge 统一错误模型：`ConnectionError | AuthenticationError | TimeoutError | ApiError | UnsupportedFeatureError | BrowserSecurityError`。
-- Core API 前端错误统一转换为 `CoreApiError`，禁止直接显示 AxiosError。
-- 每个页面 / 组件必须有 Loading、Empty、Error 三种状态。
-- 破坏性操作必须有确认。
-- AuthGate 的 Core unavailable 状态必须明确告诉用户检查 Core，不允许自动切换 legacy bypass。
+- Bark 只是 Notification Provider，Feature / Collector 禁止直接构造 Bark URL。
+- 业务与后台模块只能向 Event Bus 发布统一 Event。
+- Notification Engine 负责 Rule、Cooldown、Fingerprint dedupe、Quiet Hours、Recovery、History。
+- Bark Token URL 必须进 Vault，API/UI 永不回显明文。
+- Recovery 只在对应 fingerprint 曾进入 Active error state 后发送。
+- 不得每次 polling failure 都推送。
 
-## 8. 开发流程
+## 8. Scheduler / Collector 规范
 
-- 按 `ROADMAP.md` Phase 顺序开发，不要跳 Phase。
-- 当前阶段优先顺序：Phase 11 → 12 → 13 → 14 → 15。
-- 完成一个任务前必须通过：
+- Scheduler 必须运行在 Core，禁止依赖 browser timer。
+- `scheduled_jobs` 是配置 Source of Truth；每次运行写 `job_runs`。
+- Collector 数据写 `collector_samples`，Phase 15 再做聚合/Retention。
+- 最小安全间隔必须由 Core 强制，不能只靠 UI。
+- 关闭浏览器不停止任务；Immediate Lock / Core Restart 会停止受保护任务直到重新解锁。
+- Job failure / recovery 通过 Event Bus 进入通知引擎。
+
+## 9. 错误与 UI 状态
+
+- Surge：统一 `SurgeError` taxonomy。
+- Core：统一 `CoreApiError`，React 不直接显示 AxiosError。
+- 每个页面必须有 Loading / Empty / Error 或明确可恢复状态。
+- 破坏性操作需要确认。
+
+## 10. DeepSeek Harness 开发流程
+
+- 当前开发阶段：**Phase 15**；不要倒退重新把 Secret 放回浏览器。
+- 开发前先读 `ROADMAP.md`、本文件和相关 Feature。
+- 代码保持 TypeScript strict。
+- 正常完成任务前应执行：
 
 ```bash
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
-# 或统一：
 pnpm verify
 ```
 
-- 前端代码修改完成后必须重建 Docker Compose，并验证：
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs --tail=100 surge-core
-docker compose logs --tail=100 surge-console
-```
-
-- 必须验证真实页面：首次密码初始化、再次解锁、Settings 立即锁定、Core unavailable 状态。
-- 最终答复必须说明 CI / Docker / 页面验证结果；未实际验证不得写“已验证”。
+- 涉及前端/部署后正常应重建 Docker Compose 并验证真实页面。
+- 如果用户明确要求跳过某个门禁，本次任务按用户指令执行，但最终必须准确说明哪些验证未执行。
 - 不要修改与当前任务无关的代码。
 
-## 9. Notification / Scheduler 预留规则
+## 11. Project Rules（硬性）
 
-Phase 13 开始：
-
-- Bark 只能作为 Notification Provider，不允许业务 Feature 直接调用 Bark URL。
-- 业务模块发布统一 Event，Notification Engine 负责规则、去重、Cooldown、Quiet Hours、Recovery。
-- Bark Device Key/Token 必须进 Vault。
-- Scheduler 必须运行在 Core，不允许依赖浏览器页面常驻。
-- Scheduled job 必须记录 job_runs，并支持失败/恢复事件。
-- 默认禁止每次 polling failure 都推送；必须达到阈值后触发。
-
----
-
-## 10. Project Rules（硬性规则）
-
-1. This project is an independent Surge LAN Console.
-2. Do not copy the YASD user interface.
-3. YASD may only be used as API and behavior reference.
-4. Follow Apple iOS / macOS Liquid Glass design principles.
-5. Liquid Glass is reserved for navigation and controls.
-6. Do not use glass-on-glass.
-7. Content-heavy areas use solid/translucent content materials.
-8. Light, Dark and System themes are mandatory.
-9. Never hardcode theme colors in feature components.
-10. All browser-side Surge API calls must go through SurgeClient.
-11. Never use Axios directly inside React components.
-12. Never expose the Surge API key in URLs or console logs.
-13. Never expose data password, DEK, Session token or notification secrets in logs.
-14. Use TypeScript strict mode.
-15. Every feature must implement loading, empty and error states.
-16. Destructive operations require confirmation.
-17. Desktop-first, responsive second.
-18. Prefer clarity over decorative effects.
-19. Do not add dependencies without justification.
-20. Run `pnpm verify` before marking a task complete.
-21. Core unavailable must fail closed, not fail open.
-22. SQLite schema changes require migrations.
-23. Background automation belongs to Core, never to browser timers.
-24. Do not modify unrelated code while implementing a feature.
+1. Independent Surge LAN Console; YASD 只作 API / behavior reference，不复制 UI。
+2. Follow Apple iOS / macOS Liquid Glass principles。
+3. Browser Surge calls use SurgeClient abstraction。
+4. Never expose real X-Key / Bark Token / data password / DEK / Session token。
+5. TypeScript strict。
+6. SQLite schema changes require migrations。
+7. Background automation belongs to Core。
+8. Core unavailable fail closed。
+9. Secret only decrypted inside Core。
+10. Phase 15 继续基于 `collector_samples/job_runs/notification_history` 做 Analytics，不另起重复数据链路。
