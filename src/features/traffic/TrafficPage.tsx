@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { MetricStrip } from "@/components/ui/MetricStrip";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -6,22 +7,29 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { TrafficChart } from "@/features/traffic/TrafficChart";
 import { TrafficStatsTable, type TrafficStatsRow } from "@/features/traffic/TrafficStatsTable";
-import { ErrorStateView } from "@/components/data-state";
+import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { summarizeTraffic } from "@/api/surge-client";
-import { useRawTrafficQuery } from "@/features/shared/queries";
+import { useRawTrafficQuery, useTrafficAnalyticsQuery } from "@/features/shared/queries";
 import { usePageVisible } from "@/hooks/use-page-visibility";
 import { formatBytes, formatUptime } from "@/lib/format";
 import { normalizeEpoch } from "@/api/normalize";
 
 type Range = "1m" | "5m" | "15m" | "30m";
+type HistoryRange = "24h" | "7d" | "30d";
 
 const RANGES: { value: Range; label: string }[] = [
   { value: "1m", label: "1 分钟" },
   { value: "5m", label: "5 分钟" },
   { value: "15m", label: "15 分钟" },
   { value: "30m", label: "30 分钟" },
+];
+
+const HISTORY_RANGES: { value: HistoryRange; label: string }[] = [
+  { value: "24h", label: "24 小时" },
+  { value: "7d", label: "7 天" },
+  { value: "30d", label: "30 天" },
 ];
 
 const WINDOW_MS: Record<Range, number> = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000 };
@@ -54,10 +62,14 @@ export function TrafficPage() {
   const traffic = useRawTrafficQuery();
   const visible = usePageVisible();
   const [range, setRange] = useState<Range>("5m");
+  const [historyRange, setHistoryRange] = useState<HistoryRange>("24h");
+  const [historyRequested, setHistoryRequested] = useState(false);
   const [samples, setSamples] = useState<TrafficSample[]>([]);
+  const history = useTrafficAnalyticsQuery(historyRange, historyRequested);
 
   useEffect(() => {
     setSamples([]);
+    setHistoryRequested(false);
   }, [connectionId]);
 
   useEffect(() => {
@@ -93,6 +105,18 @@ export function TrafficPage() {
     };
   }, [windowSamples]);
 
+  const historySummary = useMemo(() => {
+    const points = history.data?.points ?? [];
+    return {
+      upload: points.reduce((sum, point) => sum + point.uploadBytesDelta, 0),
+      download: points.reduce((sum, point) => sum + point.downloadBytesDelta, 0),
+      maxUpload: points.reduce((max, point) => Math.max(max, point.maxUploadRate), 0),
+      maxDownload: points.reduce((max, point) => Math.max(max, point.maxDownloadRate), 0),
+      samples: points.reduce((sum, point) => sum + point.sampleCount, 0),
+      resolutionSeconds: points[0]?.bucketSeconds ?? (historyRange === "24h" ? 300 : 3600),
+    };
+  }, [history.data, historyRange]);
+
   const summary = useMemo(() => (traffic.data ? summarizeTraffic(traffic.data) : null), [traffic.data]);
   const startTimeMs = traffic.data?.startTime ? normalizeEpoch(traffic.data.startTime) : undefined;
   const uptimeMs = startTimeMs !== undefined ? Math.max(0, Date.now() - startTimeMs) : undefined;
@@ -119,7 +143,7 @@ export function TrafficPage() {
         description={
           traffic.isLoading
             ? "正在读取 Surge 网络接口、策略连接器与实时流量数据…"
-            : `启动于 ${formatStartTime(startTimeMs)} · 1 秒采样 · 最多保留最近 30 分钟`
+            : `启动于 ${formatStartTime(startTimeMs)} · 1 秒采样 · 实时窗口保留最近 30 分钟，长期历史由 Core SQLite 聚合保存`
         }
       />
 
@@ -184,10 +208,10 @@ export function TrafficPage() {
           <Card>
             <CardHeader className="flex-row items-center justify-between gap-3">
               <div>
-                <CardTitle>流量趋势</CardTitle>
-                <p className="mt-0.5 text-xs text-text-tertiary">1 秒采样 · 切换时间窗口不会丢失已采集的 30 分钟缓存</p>
+                <CardTitle>实时流量趋势</CardTitle>
+                <p className="mt-0.5 text-xs text-text-tertiary">浏览器 1 秒采样 · 切换时间窗口不会丢失已采集的 30 分钟缓存</p>
               </div>
-              <SegmentedControl<Range> label="时间范围" options={RANGES} value={range} onChange={setRange} />
+              <SegmentedControl<Range> label="实时范围" options={RANGES} value={range} onChange={setRange} />
             </CardHeader>
             <CardContent>
               <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -206,6 +230,53 @@ export function TrafficPage() {
                     download: sample.downloadRate,
                   }))}
                 />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle>历史流量趋势</CardTitle>
+                <p className="mt-0.5 text-xs text-text-tertiary">Core 后台采集并写入 SQLite；24 小时使用 5 分钟桶，7/30 天使用 1 小时桶。</p>
+              </div>
+              {historyRequested ? (
+                <SegmentedControl<HistoryRange> label="历史范围" options={HISTORY_RANGES} value={historyRange} onChange={setHistoryRange} />
+              ) : (
+                <Button size="sm" variant="secondary" onClick={() => setHistoryRequested(true)}>加载历史趋势</Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {!historyRequested ? (
+                <div className="rounded-[14px] border border-dashed border-border px-4 py-8 text-center">
+                  <p className="text-sm text-text-secondary">历史数据按需读取，不影响实时页面刷新。</p>
+                  <p className="mt-1 text-xs text-text-tertiary">启用后可查看最近 24 小时、7 天与 30 天的持久化流量趋势。</p>
+                </div>
+              ) : history.isLoading ? (
+                <Skeleton className="h-72 w-full" />
+              ) : history.isError ? (
+                <ErrorStateView error={history.error} api="/api/analytics/traffic" compact onRetry={() => history.refetch()} />
+              ) : (history.data?.points.length ?? 0) === 0 ? (
+                <DataEmpty title="暂无历史流量样本" description="Metrics Collector 会持续写入聚合数据；新部署需要先运行一段时间后才会形成历史趋势。" compact />
+              ) : (
+                <>
+                  <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <SummaryStat label="历史上传" value={formatBytes(historySummary.upload)} />
+                    <SummaryStat label="历史下载" value={formatBytes(historySummary.download)} />
+                    <SummaryStat label="峰值上传" value={`${formatBytes(historySummary.maxUpload)}/s`} tone="upload" />
+                    <SummaryStat label="峰值下载" value={`${formatBytes(historySummary.maxDownload)}/s`} tone="download" />
+                  </div>
+                  <TrafficChart
+                    series={(history.data?.points ?? []).map((point) => ({
+                      time: new Date(point.bucketStart).getTime(),
+                      upload: point.avgUploadRate,
+                      download: point.avgDownloadRate,
+                    }))}
+                  />
+                  <p className="mt-3 text-xs text-text-tertiary">
+                    {historySummary.samples} 个原始样本 · {historySummary.resolutionSeconds === 300 ? "5 分钟" : "1 小时"}聚合 · 图表展示平均速率，峰值与累计流量使用独立统计字段。
+                  </p>
+                </>
               )}
             </CardContent>
           </Card>
