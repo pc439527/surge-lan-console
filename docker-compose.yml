@@ -1,12 +1,14 @@
 # Surge LAN Console — container deployment
 #   docker compose up -d --build
 #   → http://<host>:8080
+# Optional exact build identity:
+#   GIT_COMMIT=$(git rev-parse --short HEAD) GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD) docker compose up -d --build
 services:
   surge-core:
     build:
       context: .
       dockerfile: server/Dockerfile
-    image: surge-lan-console-core:0.5.0
+    image: surge-lan-console-core:${APP_VERSION:-0.5.0}
     container_name: surge-core
     volumes:
       - surge-console-data:/data
@@ -19,11 +21,10 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_VERSION: 0.5.0
-        GIT_COMMIT: c79d074
-        GIT_BRANCH: main
-        BUILD_TIME: 2026-08-24T07:50:43+00:00
-    image: surge-lan-console:0.5.0
+        APP_VERSION: ${APP_VERSION:-0.5.0}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        GIT_BRANCH: ${GIT_BRANCH:-unknown}
+    image: surge-lan-console:${APP_VERSION:-0.5.0}
     container_name: surge-console
     depends_on:
       surge-core:
