@@ -52,6 +52,20 @@ const errorAnalyticsSchema = z.object({
   points: z.array(errorTrendPointSchema),
   notificationFailuresGlobal: z.number(),
 });
+const runtimeTrendPointSchema = z.object({
+  sampledAt: z.string(),
+  source: z.enum(["metrics", "traffic"]),
+  uptimeSeconds: z.number().nullable(),
+  memoryBytes: z.number().nullable(),
+  activeRequests: z.number().nullable(),
+  dnsCacheEntries: z.number().nullable(),
+  activeBans: z.number().nullable(),
+});
+const runtimeAnalyticsSchema = z.object({
+  connectionId: z.string(),
+  range: healthRangeSchema,
+  points: z.array(runtimeTrendPointSchema),
+});
 const profileSnapshotSchema = z.object({
   id: z.string(), connectionId: z.string(), sha256: z.string().length(64), profileName: z.string(),
   source: z.enum(["scheduled", "manual", "reload"]), capturedAt: z.string(), sizeBytes: z.number(),
@@ -85,6 +99,8 @@ export type PolicyHealthStat = z.infer<typeof policyHealthStatSchema>;
 export type PolicyHealthAnalytics = z.infer<typeof policyHealthAnalyticsSchema>;
 export type ErrorTrendPoint = z.infer<typeof errorTrendPointSchema>;
 export type ErrorAnalytics = z.infer<typeof errorAnalyticsSchema>;
+export type RuntimeTrendPoint = z.infer<typeof runtimeTrendPointSchema>;
+export type RuntimeAnalytics = z.infer<typeof runtimeAnalyticsSchema>;
 export type ProfileSnapshot = z.infer<typeof profileSnapshotSchema>;
 export type ProfileSnapshotDetail = z.infer<typeof profileSnapshotDetailSchema>;
 export type ProfileCaptureResult = z.infer<typeof profileCaptureSchema>;
@@ -138,6 +154,7 @@ export const coreApi = {
   getDnsAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<DnsAnalytics> => request(() => client.get("/analytics/dns", { params: { connectionId, range } }), dnsAnalyticsSchema),
   getPolicyHealthAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<PolicyHealthAnalytics> => request(() => client.get("/analytics/policy-health", { params: { connectionId, range } }), policyHealthAnalyticsSchema),
   getErrorAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<ErrorAnalytics> => request(() => client.get("/analytics/errors", { params: { connectionId, range } }), errorAnalyticsSchema),
+  getRuntimeAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<RuntimeAnalytics> => request(() => client.get("/analytics/runtime", { params: { connectionId, range } }), runtimeAnalyticsSchema),
 
   listProfileSnapshots: (connectionId: string, limit = 100): Promise<ProfileSnapshot[]> => request(() => client.get("/profile-history", { params: { connectionId, limit } }), z.array(profileSnapshotSchema)),
   captureProfileSnapshot: (connectionId: string): Promise<ProfileCaptureResult> => request(() => client.post("/profile-history/capture", { connectionId }), profileCaptureSchema),
