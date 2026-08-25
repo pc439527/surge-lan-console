@@ -6,6 +6,7 @@ const { server } = createCoreApp({
   databasePath: config.databasePath,
   sessionIdleMs: config.sessionIdleMs,
   sessionAbsoluteMs: config.sessionAbsoluteMs,
+  updateCheck: config.updateCheck,
   onRestartRequested: (restoreSucceeded) => {
     process.exitCode = restoreSucceeded ? 0 : 1;
     console.log(restoreSucceeded
