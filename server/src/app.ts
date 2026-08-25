@@ -11,6 +11,7 @@ import { SchedulerService } from "./scheduler-service.js";
 import { SecretVault } from "./secret-vault.js";
 import { SessionStore, type SessionInfo } from "./session-store.js";
 import { SurgeTransport } from "./surge-transport.js";
+import { TrafficAnalyticsService, type TrafficRange } from "./traffic-analytics.js";
 
 const SESSION_COOKIE = "slc_session";
 const MAX_JSON_BODY_BYTES = 256 * 1024;
@@ -74,6 +75,11 @@ function asConnectionInput(body: Record<string, unknown>): ConnectionInput {
   const platform = typeof body.platform === "string" ? body.platform : null;
   return { ...(typeof body.id === "string" ? { id: body.id } : {}), name: stringField(body, "name"), protocol: body.protocol === "https" ? "https" : "http", host: stringField(body, "host"), port: typeof body.port === "number" ? body.port : Number(body.port), platform: platform === "ios" || platform === "tvos" || platform === "macos" ? platform : null, ...(typeof body.apiKey === "string" ? { apiKey: body.apiKey } : {}) };
 }
+function trafficRange(value: string | null): TrafficRange {
+  if (value === null || value === "24h") return "24h";
+  if (value === "7d" || value === "30d") return value;
+  throw new CoreError("invalid_analytics_range", 400, "Traffic Analytics range 仅支持 24h、7d 或 30d。");
+}
 
 export function createCoreApp(options: CoreAppOptions) {
   const now = options.now ?? (() => Date.now()); const database = new AppDatabase(options.databasePath);
@@ -81,6 +87,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const connections = new ConnectionService(database, secretVault); const surge = new SurgeTransport(); const events = new EventBus();
   const notifications = new NotificationService(database, secretVault, runtimeVault, events);
   const scheduler = new SchedulerService(database, connections, surge, events, runtimeVault);
+  const trafficAnalytics = new TrafficAnalyticsService(database, now);
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
 
   const server = createServer(async (request, response) => {
@@ -132,6 +139,16 @@ export function createCoreApp(options: CoreAppOptions) {
       const jobRunMatch = pathname.match(/^\/api\/automation\/jobs\/([^/]+)\/run$/);
       if (method === "POST" && jobRunMatch) { requireSession(sessions, sessionToken); sendJson(response, 200, await scheduler.runNow(decodeURIComponent(jobRunMatch[1] ?? ""))); return; }
       if (method === "GET" && pathname === "/api/automation/runs") { requireSession(sessions, sessionToken); sendJson(response, 200, scheduler.listRuns(Number(url.searchParams.get("limit")) || 100)); return; }
+
+      if (method === "GET" && pathname === "/api/analytics/traffic") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "Traffic Analytics 需要 connectionId。");
+        connections.get(connectionId);
+        const range = trafficRange(url.searchParams.get("range"));
+        sendJson(response, 200, { connectionId, range, points: trafficAnalytics.query(connectionId, range) });
+        return;
+      }
 
       const proxyMatch = pathname.match(/^\/api\/surge\/([^/]+)(\/v1(?:\/.*)?)$/);
       if (proxyMatch) { const session = requireSession(sessions, sessionToken); const id = decodeURIComponent(proxyMatch[1] ?? ""); const apiPath = `${proxyMatch[2] ?? "/v1"}${url.search}`; const body = method === "GET" || method === "HEAD" ? null : await readBuffer(request, MAX_PROXY_BODY_BYTES); const result = await surge.request(connections.getCredentials(id, session.vaultKey), method, apiPath, body && body.length > 0 ? body : null, { accept: typeof request.headers.accept === "string" ? request.headers.accept : undefined, contentType: typeof request.headers["content-type"] === "string" ? request.headers["content-type"] : undefined }); response.statusCode = result.statusCode; response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff"); if (result.contentType) response.setHeader("Content-Type", result.contentType); response.end(result.body); return; }
