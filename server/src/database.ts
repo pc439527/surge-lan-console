@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { backup, DatabaseSync } from "node:sqlite";
 
 type DbValue = string | number | bigint | null;
 
@@ -265,6 +265,14 @@ export class AppDatabase {
   quickCheck(): boolean {
     const row = this.db.prepare("PRAGMA quick_check").get() as Record<string, unknown> | undefined;
     return row ? Object.values(row)[0] === "ok" : false;
+  }
+
+  async backupTo(destination: string): Promise<number> {
+    return backup(this.db, destination, { rate: 100 });
+  }
+
+  location(): string | null {
+    return this.db.location();
   }
 
   close(): void {
