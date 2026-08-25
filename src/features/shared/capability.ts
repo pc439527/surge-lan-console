@@ -25,7 +25,7 @@ export function useCapabilitiesQuery() {
     queryKey: surgeKeys.capability(
       connectionId,
       connection?.platform,
-      connection ? `${connection.protocol}://${connection.host}:${connection.port}|proxy:${connection.useProxy ? 1 : 0}` : undefined,
+      connection ? `${connection.protocol}://${connection.host}:${connection.port}|proxy:core` : undefined,
     ),
     queryFn: ({ signal }) => probeCapabilities(client!, connection?.platform, signal),
     enabled: !!client && !missingKey,

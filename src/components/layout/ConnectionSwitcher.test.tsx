@@ -9,8 +9,8 @@ describe("ConnectionSwitcher", () => {
   beforeEach(() => {
     useConnectionStore.setState({
       connections: [
-        { id: "a", name: "Apple TV", protocol: "http", host: "192.168.50.10", port: 6171 },
-        { id: "b", name: "MacBook Air", protocol: "http", host: "192.168.50.11", port: 6171 },
+        { id: "a", name: "Apple TV", protocol: "http", host: "192.168.50.10", port: 6171, hasApiKey: true },
+        { id: "b", name: "MacBook Air", protocol: "http", host: "192.168.50.11", port: 6171, hasApiKey: true },
       ],
       activeConnectionId: "b",
     });

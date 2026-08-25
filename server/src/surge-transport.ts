@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -44,7 +45,7 @@ async function resolveLanTarget(host: string): Promise<{ address: string; family
     return { address: host, family: isIP(host) };
   }
 
-  let results: Awaited<ReturnType<typeof lookup>>;
+  let results: LookupAddress[];
   try {
     results = await lookup(host, { all: true, verbatim: true });
   } catch {

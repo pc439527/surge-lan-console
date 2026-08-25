@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SurgeClient } from "@/api/surge-client";
@@ -122,9 +122,14 @@ describe("TrafficPage (实时统计)", () => {
 
   it("renders the 实时统计 header and subtitle", async () => {
     renderPage(fakeClient(trafficPayload()));
-    expect(screen.getByRole("heading", { name: "实时统计" })).toBeInTheDocument();
-    expect(screen.getByText("查看 Surge 网络接口、策略连接器与实时流量使用情况")).toBeInTheDocument();
-    expect(await screen.findByText("pdp_ip0")).toBeInTheDocument();
+    // PageHeader: eyebrow "实时统计", title "流量"
+    expect(screen.getByText("实时统计")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "流量" })).toBeInTheDocument();
+    // Wait for data, then the description switches to the live 启动于 … · 1 秒采样 text
+    await screen.findAllByText("pdp_ip0");
+    expect(screen.getByText(/启动于 .* 1 秒采样/)).toBeInTheDocument();
+    // data rows render (mobile card list + desktop table share the same names)
+    expect(screen.getAllByText("pdp_ip0").length).toBeGreaterThan(0);
   });
 
   it("shows 开启时间 from epoch-seconds startTime and a live 运行时长", async () => {
@@ -138,9 +143,10 @@ describe("TrafficPage (实时统计)", () => {
       minute: "2-digit",
       hour12: false,
     });
-    expect(await screen.findByText(expected)).toBeInTheDocument();
+    // The start time is part of the header description: 启动于 <expected> · …
+    expect((await screen.findByText((content) => content.includes(expected)))).toBeInTheDocument();
     const uptime = formatUptime(Math.max(0, Date.now() - startMs));
-    expect(screen.getByText(uptime)).toBeInTheDocument();
+    expect(screen.getAllByText(uptime).length).toBeGreaterThan(0);
   });
 
   it("also accepts a millisecond startTime (payload drift safety)", async () => {
@@ -155,13 +161,16 @@ describe("TrafficPage (实时统计)", () => {
       minute: "2-digit",
       hour12: false,
     });
-    expect(await screen.findByText(expected)).toBeInTheDocument();
+    expect(await screen.findByText((content) => content.includes(expected))).toBeInTheDocument();
   });
 
   it("renders interface rows with upload/download/total and current/max speed", async () => {
     renderPage(fakeClient(trafficPayload()));
-    expect(await screen.findByText("en0")).toBeInTheDocument();
-    const pdpRow = screen.getByText("pdp_ip0").closest("tr")!;
+    // Desktop table is the compact stats view; query inside the interface table.
+    const table = (await screen.findAllByRole("table"))[0];
+    const scope = within(table);
+    expect(scope.getByText("en0")).toBeInTheDocument();
+    const pdpRow = scope.getByText("pdp_ip0").closest("tr")!;
     // 方向不反：下载 = in，上传 = out，总计 = in + out
     expect(pdpRow.textContent).toContain(formatBytes(9_000_000_000)); // 下载 in
     expect(pdpRow.textContent).toContain(formatBytes(3_500_000_000)); // 上传 out
@@ -174,9 +183,11 @@ describe("TrafficPage (实时统计)", () => {
 
   it("renders connector rows and defaults to 总计 DESC", async () => {
     renderPage(fakeClient(trafficPayload()));
-    expect(await screen.findByText("DIRECT")).toBeInTheDocument();
-    expect(screen.getByText("Test Proxy 03")).toBeInTheDocument();
-    const rows = screen.getAllByRole("row");
+    const tables = await screen.findAllByRole("table");
+    const scope = within(tables[1]); // connector table
+    expect(scope.getByText("DIRECT")).toBeInTheDocument();
+    expect(scope.getByText("Test Proxy 03")).toBeInTheDocument();
+    const rows = scope.getAllByRole("row");
     const texts = rows.map((row) => row.textContent ?? "");
     const directIdx = texts.findIndex((t) => t.includes("DIRECT"));
     const hkIdx = texts.findIndex((t) => t.includes("Test Proxy 03"));
@@ -197,8 +208,7 @@ describe("TrafficPage (实时统计)", () => {
   it("shows a friendly error state with a working 重新加载 button", async () => {
     const client = failingClient();
     renderPage(client);
-    expect(await screen.findByText("实时统计加载失败")).toBeInTheDocument();
-    expect(screen.getByText("无法从 Surge 获取实时流量数据。")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.queryByText(/AxiosError|ERR_NETWORK/)).not.toBeInTheDocument();
     screen.getByRole("button", { name: "重新加载" }).click();
     await vi.waitFor(() => expect(client.getTraffic.mock.calls.length).toBeGreaterThanOrEqual(2));
@@ -206,8 +216,8 @@ describe("TrafficPage (实时统计)", () => {
 
   it("shows skeletons while loading (no partial data, no error text)", async () => {
     const { container } = renderPage(pendingClient());
-    expect(screen.getByRole("heading", { name: "实时统计" })).toBeInTheDocument();
-    expect(screen.queryByText("实时统计加载失败")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "流量" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByText("pdp_ip0")).not.toBeInTheDocument();
     expect(container.querySelector(".animate-pulse")).not.toBeNull();
   });
@@ -233,10 +243,10 @@ describe("TrafficPage (实时统计)", () => {
     );
 
     const { rerender } = render(<Harness client={clientA} id="c1" />);
-    expect(await screen.findByText("pdp_ip0")).toBeInTheDocument();
+    expect((await screen.findAllByText("pdp_ip0")).length).toBeGreaterThan(0);
 
     rerender(<Harness client={clientB} id="c2" />);
-    expect(await screen.findByText("utun6")).toBeInTheDocument();
+    expect((await screen.findAllByText("utun6")).length).toBeGreaterThan(0);
     expect(screen.queryByText("pdp_ip0")).not.toBeInTheDocument();
     expect(screen.queryByText("DIRECT")).not.toBeInTheDocument();
     expect(clientB.getTraffic).toHaveBeenCalledTimes(1);
@@ -258,7 +268,7 @@ describe("TrafficPage (实时统计)", () => {
     // initial fetch settles on the microtask queue
     await act(async () => {});
     const atStart = client.getTraffic.mock.calls.length;
-    expect(atStart).toBe(1); // both consumers $\rightarrow$ one request
+    expect(atStart).toBe(1); // both consumers share one request
 
     for (let i = 0; i < 5; i++) {
       await act(async () => {

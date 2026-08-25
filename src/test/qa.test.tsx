@@ -39,27 +39,17 @@ describe("QA scenarios", () => {
 
   afterEach(() => {});
 
-  it("QA-1: invalid API key surfaces an authentication error", async () => {
-    const client = {
-      testConnection: vi.fn().mockRejectedValue(
-        new SurgeError("authentication", "Invalid API key or the request was not authorized.", { status: 401 }),
-      ),
-    } as unknown as SurgeClient;
-
-    const id = useConnectionStore.getState().addConnection({
-      name: "Apple TV",
-      protocol: "http",
-      host: "192.168.50.10",
-      port: 6171,
+  it("QA-1: connection without a stored key prompts to configure it", async () => {
+    // Phase 12+: the browser holds no key; Core Vault owns it. A connection
+    // without a vaulted key surfaces a friendly message instead of a request.
+    useConnectionStore.setState({
+      connections: [{ id: "c1", name: "Apple TV", protocol: "http", host: "192.168.50.10", port: 6171, hasApiKey: false }],
+      activeConnectionId: null,
     });
-    useConnectionStore.getState().setActiveConnection(id);
-
-    // Store a wrong key
-    sessionStorage.setItem("surge-lan-console.key.session." + id, "wrong-key");
 
     const user = userEvent.setup();
-    renderWithClient(<ConnectionsPage />, client);
-    await user.click(screen.getAllByRole("button", { name: /Test/i })[0]);
+    renderWithClient(<ConnectionsPage />);
+    await user.click(screen.getByRole("button", { name: /测试连接/i }));
     await vi.waitFor(() => {
       expect(toast.error).toHaveBeenCalled();
     });
@@ -98,7 +88,7 @@ describe("QA scenarios", () => {
     renderWithClient(<DnsPage />, client);
 
     // The confirm dialog must exist before the flush call happens
-    await user.click(screen.getByRole("button", { name: /清除 DNS/i }));
+    await user.click(screen.getByRole("button", { name: /清除缓存/i }));
     expect(screen.getByText("清除 DNS 缓存？")).toBeInTheDocument();
     expect(client.flushDns).not.toHaveBeenCalled();
 
@@ -122,15 +112,17 @@ describe("QA scenarios", () => {
     expect(usePreferencesStore.getState().appearance).toBe("system");
   });
 
-  it("QA-8: store survives a browser refresh via localStorage", () => {
-    // Connection metadata persists (api key does NOT)
-    const id = useConnectionStore.getState().addConnection({
-      name: "Apple TV",
-      protocol: "http",
-      host: "192.168.50.10",
-      port: 6171,
+  it("QA-8: browser keeps only the active id — metadata and keys live in Core", () => {
+    // Phase 12+: SQLite is the source of truth. The browser persists the
+    // active connection id (non-sensitive UI pref) and nothing else.
+    useConnectionStore.setState({
+      connections: [{ id: "c1", name: "Apple TV", protocol: "http", host: "192.168.50.10", port: 6171, hasApiKey: true }],
+      activeConnectionId: null,
     });
-    expect(localStorage.getItem("surge-lan-console.connections")).toContain("Apple TV");
-    expect(localStorage.getItem("surge-lan-console.key.local." + id)).toBeNull();
+    useConnectionStore.getState().setActiveConnection("c1");
+    expect(localStorage.getItem("surge-lan-console.active-connection")).toBe("c1");
+    expect(localStorage.getItem("surge-lan-console.connections")).toBeNull();
+    expect(localStorage.getItem("surge-lan-console.key.local.c1")).toBeNull();
+    expect(sessionStorage.getItem("surge-lan-console.key.session.c1")).toBeNull();
   });
 });

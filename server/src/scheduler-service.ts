@@ -149,6 +149,7 @@ export class SchedulerService {
     const startedAt = new Date(started).toISOString();
     let status: JobRun["status"] = "success";
     let message: string | null = manual ? "manual" : null;
+    let run: JobRun;
 
     try {
       await this.perform(job);
@@ -160,7 +161,7 @@ export class SchedulerService {
     } finally {
       const finished = Date.now();
       const finishedAt = new Date(finished).toISOString();
-      const run: JobRun = {
+      run = {
         id: `run-${randomUUID()}`, jobId: job.id, status, startedAt, finishedAt,
         durationMs: Math.max(0, finished - started), message,
       };
@@ -174,9 +175,9 @@ export class SchedulerService {
         `, finishedAt, new Date(finished + job.interval_seconds * 1000).toISOString(), finishedAt, job.id);
       });
       this.running.delete(job.id);
-      if (status === "error" && manual) throw new CoreError("job_failed", 502, message ?? "任务执行失败。");
-      return run;
     }
+    if (status === "error" && manual) throw new CoreError("job_failed", 502, message ?? "任务执行失败。");
+    return run;
   }
 
   private async perform(job: JobRow): Promise<void> {

@@ -45,14 +45,21 @@ const LONG_NAME_ROW: TrafficStatsRow = {
   inMaxSpeed: 4,
 };
 
+/** The component renders a mobile card list and a desktop table; queries
+ *  against the table keep these assertions focused on the tabular view. */
+function getTable() {
+  return within(screen.getByRole("table"));
+}
+
 describe("TrafficStatsTable", () => {
   it("renders name, upload, download and total columns", () => {
     render(<TrafficStatsTable kind="connector" rows={ROWS} emptyMessage="无数据" />);
-    expect(screen.getByText("pdp_ip0")).toBeInTheDocument();
-    expect(screen.getByText("en0")).toBeInTheDocument();
-    expect(screen.getByText(formatBytes(1_000_000_000))).toBeInTheDocument(); // 上传
-    expect(screen.getByText(formatBytes(5_000_000_000))).toBeInTheDocument(); // 下载
-    expect(screen.getByText(formatBytes(5_000_000_000 + 1_000_000_000))).toBeInTheDocument(); // 总计
+    const table = getTable();
+    expect(table.getByText("pdp_ip0")).toBeInTheDocument();
+    expect(table.getByText("en0")).toBeInTheDocument();
+    expect(table.getByText(formatBytes(1_000_000_000))).toBeInTheDocument(); // 上传
+    expect(table.getByText(formatBytes(5_000_000_000))).toBeInTheDocument(); // 下载
+    expect(table.getByText(formatBytes(5_000_000_000 + 1_000_000_000))).toBeInTheDocument(); // 总计
   });
 
   it("defaults to total (in + out) descending", () => {
@@ -85,12 +92,13 @@ describe("TrafficStatsTable", () => {
 
   it("renders current and max speed as arrow + bytes/s pairs", () => {
     render(<TrafficStatsTable kind="connector" rows={ROWS} emptyMessage="无数据" />);
+    const table = getTable();
     // pdp_ip0 current speed: ↑ 1000 B/s (upload loc), ↓ 2 KB/s
-    expect(screen.getByText("↑ " + formatBytes(1_000) + "/s")).toBeInTheDocument();
-    expect(screen.getByText("↓ " + formatBytes(2_000) + "/s")).toBeInTheDocument();
+    expect(table.getByText("↑ " + formatBytes(1_000) + "/s")).toBeInTheDocument();
+    expect(table.getByText("↓ " + formatBytes(2_000) + "/s")).toBeInTheDocument();
     // pdp_ip0 max speed
-    expect(screen.getByText("↑ " + formatBytes(500_000) + "/s")).toBeInTheDocument();
-    expect(screen.getByText("↓ " + formatBytes(6_000_000) + "/s")).toBeInTheDocument();
+    expect(table.getByText("↑ " + formatBytes(500_000) + "/s")).toBeInTheDocument();
+    expect(table.getByText("↓ " + formatBytes(6_000_000) + "/s")).toBeInTheDocument();
   });
 
   it("sorts by current speed using the summed rate (up + down)", async () => {
@@ -114,7 +122,8 @@ describe("TrafficStatsTable", () => {
 
   it("keeps long connector names readable via the title tooltip", () => {
     render(<TrafficStatsTable kind="connector" rows={[LONG_NAME_ROW]} emptyMessage="无数据" />);
-    const cell = screen.getByTitle(LONG_NAME);
+    const table = getTable();
+    const cell = table.getByTitle(LONG_NAME);
     expect(cell).toHaveTextContent(LONG_NAME);
   });
 
@@ -127,11 +136,13 @@ describe("TrafficStatsTable", () => {
     const { container: iface, unmount } = render(
       <TrafficStatsTable kind="interface" rows={[ROWS[0]]} emptyMessage="无数据" />,
     );
-    expect(iface.querySelector("th")?.getAttribute("class")).toContain("min-w-[160px]");
+    const ifaceTh = iface.querySelector("th");
+    expect(ifaceTh?.getAttribute("style")).toContain("min-width: 160px");
     unmount();
     const { container: conn } = render(
       <TrafficStatsTable kind="connector" rows={[ROWS[0]]} emptyMessage="无数据" />,
     );
-    expect(conn.querySelector("th")?.getAttribute("class")).toContain("min-w-[240px]");
+    const connTh = conn.querySelector("th");
+    expect(connTh?.getAttribute("style")).toContain("min-width: 240px");
   });
 });

@@ -134,5 +134,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: true,
-  },
-});
+    // server/ tests run under `node --test` via pnpm test:core; keep them out
+    // of the jsdom suite (node:test files have no vitest suites).
+    exclude: ["**/node_modules/**", "**/dist/**", "server/**"],
+  }});

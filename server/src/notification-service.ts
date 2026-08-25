@@ -212,6 +212,7 @@ export class NotificationService {
   }
 
   private async dispatch(channel: ChannelRow, rule: RuleRow, event: ConsoleEvent): Promise<void> {
+    if (!channel.secret_id) return;
     const state = this.database.queryOne<EventStateRow>(`
       SELECT active, last_sent_at FROM event_states WHERE channel_id = ? AND fingerprint = ?
     `, channel.id, event.fingerprint);

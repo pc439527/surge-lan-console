@@ -30,22 +30,20 @@ describe("AppLayout", () => {
     expect(screen.getAllByText("仪表盘").length).toBeGreaterThan(0);
     expect(screen.getAllByText("策略").length).toBeGreaterThan(0);
     expect(screen.getAllByText("流量").length).toBeGreaterThan(0);
-    expect(screen.getByText("未连接")).toBeInTheDocument();
+    expect(screen.getByText("无连接")).toBeInTheDocument();
   });
 
   it("renders mobile bottom navigation", () => {
     renderLayout();
-    expect(screen.getByLabelText("Mobile navigation")).toBeInTheDocument();
+    expect(screen.getByLabelText("移动端导航")).toBeInTheDocument();
   });
 
-  it("switches active connection", () => {
-    const id = useConnectionStore.getState().addConnection({
-      name: "Apple TV",
-      protocol: "http",
-      host: "192.168.50.10",
-      port: 6171,
+  it("switches active connection", async () => {
+    useConnectionStore.setState({
+      connections: [{ id: "c1", name: "Apple TV", protocol: "http", host: "192.168.50.10", port: 6171, hasApiKey: false }],
+      activeConnectionId: null,
     });
-    useConnectionStore.getState().setActiveConnection(id);
+    useConnectionStore.getState().setActiveConnection("c1");
     renderLayout();
     expect(screen.getAllByText("Apple TV").length).toBeGreaterThan(0);
     expect(screen.getByText("192.168.50.10:6171")).toBeInTheDocument();
