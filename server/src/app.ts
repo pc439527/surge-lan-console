@@ -4,6 +4,7 @@ import { BackupService } from "./backup-service.js";
 import { AppDatabase } from "./database.js";
 import { AuthError, AuthService } from "./auth-service.js";
 import { ConnectionService, type ConnectionInput } from "./connection-service.js";
+import { ErrorAnalyticsService } from "./error-analytics.js";
 import { EventBus } from "./event-bus.js";
 import { CoreError } from "./errors.js";
 import { HealthAnalyticsService, type HealthRange } from "./health-analytics.js";
@@ -98,6 +99,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const scheduler = new SchedulerService(database, connections, surge, events, runtimeVault);
   const trafficAnalytics = new TrafficAnalyticsService(database, now);
   const healthAnalytics = new HealthAnalyticsService(database, now);
+  const errorAnalytics = new ErrorAnalyticsService(database, now);
   const profileHistory = new ProfileHistoryService(database, now);
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
@@ -188,6 +190,15 @@ export function createCoreApp(options: CoreAppOptions) {
         connections.get(connectionId);
         const range = healthRange(url.searchParams.get("range"));
         sendJson(response, 200, { connectionId, range, nodes: healthAnalytics.queryPolicy(connectionId, range) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/analytics/errors") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "Error Analytics 需要 connectionId。");
+        connections.get(connectionId);
+        const range = healthRange(url.searchParams.get("range"));
+        sendJson(response, 200, { connectionId, range, ...errorAnalytics.query(connectionId, range) });
         return;
       }
 
