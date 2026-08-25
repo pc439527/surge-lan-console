@@ -130,7 +130,7 @@ function sanitizeSettings(input: Record<string, unknown>, strict: boolean): Rete
     const value = input[key];
     if (value === undefined) continue;
     const bounds = BOUNDS[key];
-    if (!Number.isInteger(value) || typeof value !== "number" || value < bounds.min || value > bounds.max) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < bounds.min || value > bounds.max) {
       if (strict) {
         throw new CoreError(
           "invalid_retention_setting",
