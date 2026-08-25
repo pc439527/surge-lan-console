@@ -28,6 +28,32 @@ const trafficAnalyticsSchema = z.object({
   range: trafficRangeSchema,
   points: z.array(trafficRollupPointSchema),
 });
+const profileSnapshotSchema = z.object({
+  id: z.string(),
+  connectionId: z.string(),
+  sha256: z.string().length(64),
+  profileName: z.string(),
+  source: z.enum(["scheduled", "manual", "reload"]),
+  capturedAt: z.string(),
+  sizeBytes: z.number(),
+});
+const profileSnapshotDetailSchema = profileSnapshotSchema.extend({ content: z.string() });
+const profileCaptureSchema = z.object({ snapshot: profileSnapshotSchema, created: z.boolean() });
+const profileDiffChunkSchema = z.object({
+  oldStartLine: z.number(),
+  newStartLine: z.number(),
+  removed: z.array(z.string()),
+  added: z.array(z.string()),
+});
+const profileDiffSchema = z.object({
+  from: profileSnapshotSchema,
+  to: profileSnapshotSchema,
+  changed: z.boolean(),
+  addedLines: z.number(),
+  removedLines: z.number(),
+  truncated: z.boolean(),
+  chunks: z.array(profileDiffChunkSchema),
+});
 
 export type CoreAuthState = z.infer<typeof authStateSchema>;
 export type CoreHealth = z.infer<typeof healthSchema>;
@@ -41,6 +67,10 @@ export type JobRun = z.infer<typeof runSchema>;
 export type TrafficAnalyticsRange = z.infer<typeof trafficRangeSchema>;
 export type TrafficRollupPoint = z.infer<typeof trafficRollupPointSchema>;
 export type TrafficAnalytics = z.infer<typeof trafficAnalyticsSchema>;
+export type ProfileSnapshot = z.infer<typeof profileSnapshotSchema>;
+export type ProfileSnapshotDetail = z.infer<typeof profileSnapshotDetailSchema>;
+export type ProfileCaptureResult = z.infer<typeof profileCaptureSchema>;
+export type ProfileDiff = z.infer<typeof profileDiffSchema>;
 
 export interface CoreConnectionInput { id?: string; name: string; protocol: "http" | "https"; host: string; port: number; platform?: "ios" | "tvos" | "macos" | null; apiKey?: string }
 export class CoreApiError extends Error { constructor(public readonly code: string, public readonly status: number | null, message: string) { super(message); this.name = "CoreApiError"; } }
@@ -84,4 +114,13 @@ export const coreApi = {
 
   getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> =>
     request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
+
+  listProfileSnapshots: (connectionId: string, limit = 100): Promise<ProfileSnapshot[]> =>
+    request(() => client.get("/profile-history", { params: { connectionId, limit } }), z.array(profileSnapshotSchema)),
+  captureProfileSnapshot: (connectionId: string): Promise<ProfileCaptureResult> =>
+    request(() => client.post("/profile-history/capture", { connectionId }), profileCaptureSchema),
+  getProfileSnapshot: (connectionId: string, id: string): Promise<ProfileSnapshotDetail> =>
+    request(() => client.get(`/profile-history/${encodeURIComponent(id)}`, { params: { connectionId } }), profileSnapshotDetailSchema),
+  diffProfileSnapshots: (connectionId: string, from: string, to: string): Promise<ProfileDiff> =>
+    request(() => client.get("/profile-history/diff", { params: { connectionId, from, to } }), profileDiffSchema),
 };
