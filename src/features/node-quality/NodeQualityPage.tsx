@@ -11,7 +11,7 @@ import { useSurgeClientState } from "@/app/surge-client-context";
 import { usePolicyGroupsQuery, usePolicyTestResultsQuery, useTestAllGroupsMutation } from "@/features/policies/policies-queries";
 import { cn } from "@/lib/cn";
 import { NodeLatencyBadge } from "./NodeLatencyBadge";
-import { nodeQuality, rankNodes } from "./node-quality";
+import { dedupeNodeQualities, nodeQuality, rankNodes } from "./node-quality";
 
 export function NodeQualityPage() {
   const { client } = useSurgeClientState();
@@ -19,11 +19,19 @@ export function NodeQualityPage() {
   const results = usePolicyTestResultsQuery();
   const testAll = useTestAllGroupsMutation();
   const rows = useMemo(
-    () => rankNodes(
+    () => rankNodes(dedupeNodeQualities(
       (groups.data ?? []).flatMap((group) =>
-        group.policies.map((name) => nodeQuality(name, group.name, results.data?.[group.name]?.[name])),
+        group.policies.map((name) => nodeQuality(
+          name,
+          group.name,
+          results.data?.[group.name]?.[name],
+          {
+            lineHash: group.lineHashes[name],
+            typeDescription: group.types[name] ?? "",
+          },
+        )),
       ),
-    ),
+    )),
     [groups.data, results.data],
   );
 
@@ -51,7 +59,7 @@ export function NodeQualityPage() {
       <PageHeader
         eyebrow="Node Quality"
         title="节点质量"
-        description="统一查看节点延迟、可用性与综合评分；排序结果用于快速识别当前质量最好的出口。"
+        description="按真实节点去重查看延迟、可用性与综合评分；同一节点即使属于多个策略组也只显示一次。"
         actions={
           <>
             <Button onClick={runAll} disabled={testAll.isPending || !groups.data?.length}>
@@ -82,7 +90,7 @@ export function NodeQualityPage() {
           </span>
           <div>
             <p className="text-sm font-medium text-text-primary">等待节点测速数据</p>
-            <p className="mt-0.5 text-xs text-text-secondary">点击“一键测速”，系统会依次测试全部策略组。</p>
+            <p className="mt-0.5 text-xs text-text-secondary">点击“一键测速”，系统会依次测试全部策略组并合并同一节点的结果。</p>
           </div>
         </div>
       )}
@@ -94,18 +102,18 @@ export function NodeQualityPage() {
           <CardHeader className="flex-row items-start justify-between gap-4">
             <div>
               <CardTitle>节点排名</CardTitle>
-              <p className="mt-1 text-xs text-text-tertiary">按综合评分排序；延迟仅作为其中一个质量信号。</p>
+              <p className="mt-1 text-xs text-text-tertiary">按真实节点排序；所属多个策略组时合并展示，重复测速结果取中位延迟。</p>
             </div>
-            <span className="text-xs text-text-tertiary">{rows.length} 个节点</span>
+            <span className="text-xs text-text-tertiary">{rows.length} 个唯一节点</span>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse">
+              <table className="w-full min-w-[760px] border-collapse">
                 <thead className="sticky top-0 z-[1] bg-surface-panel/95 backdrop-blur-md">
                   <tr className="border-b border-border text-left text-xs text-text-tertiary">
                     <th className="w-16 px-5 py-3 font-medium">排名</th>
                     <th className="px-3 py-3 font-medium">节点</th>
-                    <th className="px-3 py-3 font-medium">策略组</th>
+                    <th className="px-3 py-3 font-medium">所属策略组</th>
                     <th className="px-3 py-3 font-medium">延迟</th>
                     <th className="px-5 py-3 text-right font-medium">评分</th>
                   </tr>
@@ -113,15 +121,22 @@ export function NodeQualityPage() {
                 <tbody>
                   {rows.map((row, index) => (
                     <tr
-                      key={row.group + row.name}
+                      key={row.id}
                       className={cn(
                         "border-b border-border/45 text-[13px] transition-colors duration-hover last:border-b-0 hover:bg-elevated/35",
                         index < 3 && "bg-accent/[0.025]",
                       )}
                     >
                       <td className="px-5 py-3 font-mono text-xs tabular-nums text-text-tertiary">#{index + 1}</td>
-                      <td className="px-3 py-3 font-medium text-text-primary">{row.name}</td>
-                      <td className="px-3 py-3 text-text-secondary">{row.group}</td>
+                      <td className="px-3 py-3 font-medium text-text-primary">
+                        <div className="min-w-0">
+                          <p className="truncate">{row.name}</p>
+                          {row.typeDescription && <p className="mt-0.5 font-mono text-[10px] text-text-tertiary">{row.typeDescription}</p>}
+                        </div>
+                      </td>
+                      <td className="max-w-[320px] px-3 py-3 text-text-secondary" title={row.groups.join(" · ")}>
+                        <span className="line-clamp-2">{row.groups.join(" · ")}</span>
+                      </td>
                       <td className="px-3 py-3"><NodeLatencyBadge latency={row.latencyMs} reachable={row.reachable} /></td>
                       <td className="px-5 py-3 text-right font-mono font-medium tabular-nums text-text-secondary">{row.score ?? "—"}</td>
                     </tr>
