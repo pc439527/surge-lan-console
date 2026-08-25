@@ -112,7 +112,7 @@ export const coreApi = {
   listNotificationChannels: (): Promise<NotificationChannel[]> => request(() => client.get("/notifications/channels"), z.array(channelSchema)),
   createNotificationChannel: (input: { name: string; endpoint: string; enabled?: boolean }): Promise<NotificationChannel> => request(() => client.post("/notifications/channels", input), channelSchema),
   updateNotificationChannel: (id: string, input: { name?: string; endpoint?: string; enabled?: boolean }): Promise<NotificationChannel> => request(() => client.patch(`/notifications/channels/${encodeURIComponent(id)}`, input), channelSchema),
-  deleteNotificationChannel: (id: string): Promise<{ deleted: boolean }> => request(() => client.delete(`/notifications/channels/${encodeURIComponent(id)}`, z.object({ deleted: z.boolean() }))),
+  deleteNotificationChannel: (id: string): Promise<{ deleted: boolean }> => request(() => client.delete(`/notifications/channels/${encodeURIComponent(id)}`), z.object({ deleted: z.boolean() })),
   testNotificationChannel: (id: string): Promise<{ sent: boolean }> => request(() => client.post(`/notifications/channels/${encodeURIComponent(id)}/test`), z.object({ sent: z.boolean() })),
   listNotificationRules: (channelId?: string): Promise<NotificationRule[]> => request(() => client.get("/notifications/rules", { params: channelId ? { channelId } : undefined }), z.array(ruleSchema)),
   updateNotificationRule: (id: string, input: { enabled?: boolean; cooldownSeconds?: number; quietStart?: string | null; quietEnd?: string | null; timeZone?: string }): Promise<NotificationRule> => request(() => client.patch(`/notifications/rules/${encodeURIComponent(id)}`, input), ruleSchema),
