@@ -30,6 +30,36 @@ const trafficAnalyticsSchema = z.object({
   range: trafficRangeSchema,
   points: z.array(trafficRollupPointSchema),
 });
+const healthRangeSchema = z.enum(["24h", "7d"]);
+const dnsTrendPointSchema = z.object({
+  sampledAt: z.string(),
+  domain: z.string(),
+  delayMs: z.number(),
+  apiLatencyMs: z.number().nullable(),
+});
+const dnsAnalyticsSchema = z.object({
+  connectionId: z.string(),
+  range: healthRangeSchema,
+  points: z.array(dnsTrendPointSchema),
+});
+const policyHealthStatSchema = z.object({
+  key: z.string(),
+  name: z.string(),
+  groups: z.array(z.string()),
+  sampleCount: z.number(),
+  reachableCount: z.number(),
+  availabilityPercent: z.number(),
+  p50Ms: z.number().nullable(),
+  p95Ms: z.number().nullable(),
+  lastLatencyMs: z.number().nullable(),
+  lastReachable: z.boolean(),
+  lastSampledAt: z.string(),
+});
+const policyHealthAnalyticsSchema = z.object({
+  connectionId: z.string(),
+  range: healthRangeSchema,
+  nodes: z.array(policyHealthStatSchema),
+});
 const profileSnapshotSchema = z.object({
   id: z.string(),
   connectionId: z.string(),
@@ -71,6 +101,11 @@ export type BackupValidation = z.infer<typeof backupValidationSchema>;
 export type TrafficAnalyticsRange = z.infer<typeof trafficRangeSchema>;
 export type TrafficRollupPoint = z.infer<typeof trafficRollupPointSchema>;
 export type TrafficAnalytics = z.infer<typeof trafficAnalyticsSchema>;
+export type HealthAnalyticsRange = z.infer<typeof healthRangeSchema>;
+export type DnsTrendPoint = z.infer<typeof dnsTrendPointSchema>;
+export type DnsAnalytics = z.infer<typeof dnsAnalyticsSchema>;
+export type PolicyHealthStat = z.infer<typeof policyHealthStatSchema>;
+export type PolicyHealthAnalytics = z.infer<typeof policyHealthAnalyticsSchema>;
 export type ProfileSnapshot = z.infer<typeof profileSnapshotSchema>;
 export type ProfileSnapshotDetail = z.infer<typeof profileSnapshotDetailSchema>;
 export type ProfileCaptureResult = z.infer<typeof profileCaptureSchema>;
@@ -117,11 +152,15 @@ export const coreApi = {
   listJobRuns: (limit = 100): Promise<JobRun[]> => request(() => client.get("/automation/runs", { params: { limit } }), z.array(runSchema)),
 
   listBackups: (): Promise<BackupInfo[]> => request(() => client.get("/backups"), z.array(backupInfoSchema)),
-  createBackup: (): Promise<BackupValidation> => request(() => client.post("/backups"), backupValidationSchema),
-  validateBackup: (id: string): Promise<BackupValidation> => request(() => client.post("/backups/validate", { id }), backupValidationSchema),
+  createBackup: (): Promise<BackupValidation> => request(() => client.post("/backups", undefined, { timeout: 60_000 }), backupValidationSchema),
+  validateBackup: (id: string): Promise<BackupValidation> => request(() => client.post("/backups/validate", { id }, { timeout: 60_000 }), backupValidationSchema),
 
   getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> =>
     request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
+  getDnsAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<DnsAnalytics> =>
+    request(() => client.get("/analytics/dns", { params: { connectionId, range } }), dnsAnalyticsSchema),
+  getPolicyHealthAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<PolicyHealthAnalytics> =>
+    request(() => client.get("/analytics/policy-health", { params: { connectionId, range } }), policyHealthAnalyticsSchema),
 
   listProfileSnapshots: (connectionId: string, limit = 100): Promise<ProfileSnapshot[]> =>
     request(() => client.get("/profile-history", { params: { connectionId, limit } }), z.array(profileSnapshotSchema)),
