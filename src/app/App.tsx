@@ -1,5 +1,6 @@
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "@/components/ui/Toast";
+import { AuthGate } from "@/features/auth/AuthGate";
 import { useThemeSync } from "@/lib/theme";
 import { Providers } from "./providers";
 import { router } from "./router";
@@ -10,10 +11,12 @@ export default function App() {
 
   return (
     <Providers>
-      <SurgeClientProvider>
-        <RouterProvider router={router} />
-        <Toaster />
-      </SurgeClientProvider>
+      <AuthGate>
+        <SurgeClientProvider>
+          <RouterProvider router={router} />
+          <Toaster />
+        </SurgeClientProvider>
+      </AuthGate>
     </Providers>
   );
 }

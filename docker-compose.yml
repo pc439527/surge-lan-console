@@ -2,6 +2,18 @@
 #   docker compose up -d --build
 #   → http://<host>:8080
 services:
+  surge-core:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: surge-lan-console-core:0.5.0
+    container_name: surge-core
+    volumes:
+      - surge-console-data:/data
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+
   surge-console:
     build:
       context: .
@@ -13,8 +25,14 @@ services:
         BUILD_TIME: 2026-08-24T07:50:43+00:00
     image: surge-lan-console:0.5.0
     container_name: surge-console
+    depends_on:
+      surge-core:
+        condition: service_healthy
     ports:
       - "8080:80"
     restart: unless-stopped
     security_opt:
       - "no-new-privileges:true"
+
+volumes:
+  surge-console-data:
