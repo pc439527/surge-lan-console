@@ -133,6 +133,21 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
         ON collector_samples(connection_id, kind, sampled_at DESC);
     `,
   },
+  {
+    version: 5,
+    sql: `
+      CREATE TABLE IF NOT EXISTS collector_state (
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        collector TEXT NOT NULL,
+        cursor_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(connection_id, collector)
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS idx_collector_samples_sampled_at
+        ON collector_samples(sampled_at);
+    `,
+  },
 ];
 
 export class AppDatabase {
