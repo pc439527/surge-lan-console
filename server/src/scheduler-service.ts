@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { AppDatabase } from "./database.js";
 import type { ConnectionService } from "./connection-service.js";
 import type { EventBus } from "./event-bus.js";
+import { parseSurgeEvents } from "./event-collector.js";
 import { CoreError } from "./errors.js";
+import { RetentionService } from "./retention-service.js";
 import type { RuntimeVault } from "./runtime-vault.js";
 import type { SurgeTransport, SurgeProxyResult } from "./surge-transport.js";
 
@@ -19,6 +21,10 @@ interface JobRow {
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface CollectorStateRow {
+  cursor_json: string;
 }
 
 export interface ScheduledJob {
@@ -60,9 +66,13 @@ const MIN_INTERVAL: Record<JobType, number> = {
   "daily-digest": 3600,
 };
 
+const EVENT_CURSOR_LIMIT = 400;
+const EVENT_WINDOW_LIMIT = 200;
+
 export class SchedulerService {
   private timer: NodeJS.Timeout | null = null;
   private readonly running = new Set<string>();
+  private readonly retention: RetentionService;
   private announcedUnlock = false;
 
   constructor(
@@ -71,12 +81,15 @@ export class SchedulerService {
     private readonly surge: SurgeTransport,
     private readonly events: EventBus,
     private readonly runtimeVault: RuntimeVault,
-  ) {}
+  ) {
+    this.retention = new RetentionService(database);
+  }
 
   start(): void {
     if (this.timer) return;
     this.ensureDefaultsForAll();
     this.ensureDailyDigest();
+    this.retention.runIfDue();
     this.timer = setInterval(() => { void this.tick(); }, 1_000);
     this.timer.unref();
   }
@@ -128,6 +141,7 @@ export class SchedulerService {
   }
 
   private async tick(): Promise<void> {
+    this.retention.runIfDue();
     if (!this.runtimeVault.isUnlocked()) {
       this.announcedUnlock = false;
       return;
@@ -263,20 +277,74 @@ export class SchedulerService {
   private async collectEvents(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
     const result = await this.surge.request(credentials, "GET", "/v1/events");
     if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("events_http_error", 502, `Events API 返回 HTTP ${result.statusCode}。`);
-    this.storeSample(connectionId, "events", result.body);
-    try {
-      const payload = JSON.parse(result.body.toString("utf8")) as unknown;
-      const items = Array.isArray(payload) ? payload : payload && typeof payload === "object" && Array.isArray((payload as { events?: unknown[] }).events) ? (payload as { events: unknown[] }).events : [];
-      for (const raw of items.slice(-50)) {
-        if (!raw || typeof raw !== "object") continue;
-        const item = raw as Record<string, unknown>;
-        const level = String(item.level ?? item.type ?? "").toLowerCase();
-        if (!level.includes("warn") && !level.includes("error")) continue;
-        const text = String(item.message ?? item.event ?? item.title ?? "Surge event").slice(0, 800);
-        const type = level.includes("error") ? "event-error" : "event-warning";
-        this.events.publish({ type, fingerprint: `${type}:${connectionId}:${text.slice(0, 120)}`, title: level.includes("error") ? "Surge Error Event" : "Surge Warning Event", body: text, severity: level.includes("error") ? "error" : "warning", connectionId });
+
+    const recent = parseSurgeEvents(result.body).slice(-EVENT_WINDOW_LIMIT);
+    const previousCursor = this.loadEventCursor(connectionId);
+    const currentKeys = recent.map((event) => event.key);
+
+    // Bootstrap only establishes the cursor. Do not notify historical warnings
+    // already present when the collector is enabled or the Core is upgraded.
+    if (previousCursor === null) {
+      this.saveEventCursor(connectionId, currentKeys);
+      return;
+    }
+
+    const seen = new Set(previousCursor);
+    const unseen = recent.filter((event) => !seen.has(event.key));
+    if (unseen.length > 0) {
+      this.storeSample(
+        connectionId,
+        "events",
+        Buffer.from(JSON.stringify({
+          events: unseen.map((event) => ({
+            identifier: event.identifier,
+            date: event.date,
+            type: event.type,
+            content: event.content,
+          })),
+        })),
+      );
+
+      for (const event of unseen) {
+        if (!event.severity) continue;
+        const type = event.severity === "error" ? "event-error" : "event-warning";
+        const title = event.severity === "error" ? "Surge 错误事件" : "Surge 警告事件";
+        this.events.publish({
+          type,
+          fingerprint: `${type}:${connectionId}:${event.content.slice(0, 120)}`,
+          title,
+          body: event.content.slice(0, 800),
+          severity: event.severity,
+          connectionId,
+        });
       }
-    } catch { /* Collector data is still retained even when event shape is unknown. */ }
+    }
+
+    const nextCursor = [...new Set([...previousCursor, ...currentKeys])].slice(-EVENT_CURSOR_LIMIT);
+    this.saveEventCursor(connectionId, nextCursor);
+  }
+
+  private loadEventCursor(connectionId: string): string[] | null {
+    const state = this.database.queryOne<CollectorStateRow>(`
+      SELECT cursor_json FROM collector_state WHERE connection_id = ? AND collector = 'events'
+    `, connectionId);
+    if (!state) return null;
+    try {
+      const parsed = JSON.parse(state.cursor_json) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveEventCursor(connectionId: string, keys: string[]): void {
+    this.database.execute(`
+      INSERT INTO collector_state(connection_id, collector, cursor_json, updated_at)
+      VALUES (?, 'events', ?, ?)
+      ON CONFLICT(connection_id, collector) DO UPDATE SET
+        cursor_json = excluded.cursor_json,
+        updated_at = excluded.updated_at
+    `, connectionId, JSON.stringify(keys.slice(-EVENT_CURSOR_LIMIT)), new Date().toISOString());
   }
 
   private storeSample(connectionId: string, kind: string, body: Buffer): void {
