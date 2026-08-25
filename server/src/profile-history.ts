@@ -201,8 +201,15 @@ function publicSnapshot(row: SnapshotRow): ProfileSnapshot {
 }
 
 function withoutContent(snapshot: ProfileSnapshotDetail): ProfileSnapshot {
-  const { content: _content, ...result } = snapshot;
-  return result;
+  return {
+    id: snapshot.id,
+    connectionId: snapshot.connectionId,
+    sha256: snapshot.sha256,
+    profileName: snapshot.profileName,
+    source: snapshot.source,
+    capturedAt: snapshot.capturedAt,
+    sizeBytes: snapshot.sizeBytes,
+  };
 }
 
 function normalizeLineEndings(value: string): string {
