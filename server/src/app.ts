@@ -10,6 +10,7 @@ import { CoreError } from "./errors.js";
 import { HealthAnalyticsService, type HealthRange } from "./health-analytics.js";
 import { NotificationService } from "./notification-service.js";
 import { ProfileHistoryService } from "./profile-history.js";
+import { RuntimeAnalyticsService } from "./runtime-analytics.js";
 import { RuntimeVault } from "./runtime-vault.js";
 import { SchedulerService } from "./scheduler-service.js";
 import { SecretVault } from "./secret-vault.js";
@@ -100,6 +101,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const trafficAnalytics = new TrafficAnalyticsService(database, now);
   const healthAnalytics = new HealthAnalyticsService(database, now);
   const errorAnalytics = new ErrorAnalyticsService(database, now);
+  const runtimeAnalytics = new RuntimeAnalyticsService(database, now);
   const profileHistory = new ProfileHistoryService(database, now);
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
@@ -199,6 +201,15 @@ export function createCoreApp(options: CoreAppOptions) {
         connections.get(connectionId);
         const range = healthRange(url.searchParams.get("range"));
         sendJson(response, 200, { connectionId, range, ...errorAnalytics.query(connectionId, range) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/analytics/runtime") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "Runtime Analytics 需要 connectionId。");
+        connections.get(connectionId);
+        const range = healthRange(url.searchParams.get("range"));
+        sendJson(response, 200, { connectionId, range, points: runtimeAnalytics.query(connectionId, range) });
         return;
       }
 
