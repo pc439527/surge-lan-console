@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock3, CalendarDays } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { MetricStrip } from "@/components/ui/MetricStrip";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { TrafficChart } from "@/features/traffic/TrafficChart";
 import { TrafficStatsTable, type TrafficStatsRow } from "@/features/traffic/TrafficStatsTable";
+import { ErrorStateView } from "@/components/data-state";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { summarizeTraffic } from "@/api/surge-client";
@@ -24,8 +25,6 @@ const RANGES: { value: Range; label: string }[] = [
 ];
 
 const WINDOW_MS: Record<Range, number> = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000 };
-
-/** Keep the last 30 minutes (1s sampling) in the ring buffer; the UI filters on top. */
 const MAX_POINTS = 1800;
 
 interface TrafficSample {
@@ -36,7 +35,6 @@ interface TrafficSample {
   totalDownload: number;
 }
 
-/** Surge session start as a display string; falls back to "—". */
 function formatStartTime(ms: number | undefined): string {
   if (ms === undefined || !Number.isFinite(ms)) return "—";
   const date = new Date(ms);
@@ -51,10 +49,6 @@ function formatStartTime(ms: number | undefined): string {
   });
 }
 
-/**
- * 实时统计 — the full /v1/traffic payload (interfaces + connectors + runtime),
- * backed by the same single-cache raw query the Dashboard summary derives from.
- */
 export function TrafficPage() {
   const { client, connectionId } = useSurgeClientState();
   const traffic = useRawTrafficQuery();
@@ -62,20 +56,16 @@ export function TrafficPage() {
   const [range, setRange] = useState<Range>("5m");
   const [samples, setSamples] = useState<TrafficSample[]>([]);
 
-  // Switching Surge instances must never mix charts or show stale stats.
   useEffect(() => {
     setSamples([]);
   }, [connectionId]);
 
-  // Ring buffer: append while the tab is visible, cap at MAX_POINTS (30 min).
-  // Hidden tabs stop appending (their Date.now() drifts anyway) — TanStack
-  // Query pauses polling and refetches on return (see queries.ts).
   useEffect(() => {
     if (!traffic.data || !visible) return;
     const summary = summarizeTraffic(traffic.data);
-    setSamples((prev) => {
+    setSamples((previous) => {
       const next = [
-        ...prev,
+        ...previous,
         {
           time: Date.now(),
           uploadRate: summary.uploadRate,
@@ -90,10 +80,9 @@ export function TrafficPage() {
 
   const windowSamples = useMemo(() => {
     const cutoff = Date.now() - WINDOW_MS[range];
-    return samples.filter((p) => p.time >= cutoff);
+    return samples.filter((sample) => sample.time >= cutoff);
   }, [samples, range]);
 
-  // Window totals = last cumulative value - first cumulative value.
   const totals = useMemo(() => {
     if (windowSamples.length < 2) return { upload: 0, download: 0 };
     const first = windowSamples[0];
@@ -105,10 +94,8 @@ export function TrafficPage() {
   }, [windowSamples]);
 
   const summary = useMemo(() => (traffic.data ? summarizeTraffic(traffic.data) : null), [traffic.data]);
-
   const startTimeMs = traffic.data?.startTime ? normalizeEpoch(traffic.data.startTime) : undefined;
-  const uptimeMs =
-    startTimeMs !== undefined ? Math.max(0, Date.now() - startTimeMs) : undefined;
+  const uptimeMs = startTimeMs !== undefined ? Math.max(0, Date.now() - startTimeMs) : undefined;
 
   const interfaceRows = useMemo<TrafficStatsRow[]>(
     () => Object.entries(traffic.data?.interface ?? {}).map(([name, stats]) => ({ name, ...stats })),
@@ -120,96 +107,53 @@ export function TrafficPage() {
     [traffic.data],
   );
 
-  if (!client) return <NoClientNotice page="实时统计" />;
+  if (!client) return <NoClientNotice page="流量" />;
+
+  const currentRate = (summary?.uploadRate ?? 0) + (summary?.downloadRate ?? 0);
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-[26px] font-semibold text-text-primary">实时统计</h1>
-          <p className="mt-0.5 text-sm text-text-secondary">
-            查看 Surge 网络接口、策略连接器与实时流量使用情况
-          </p>
-        </div>
-      </header>
+    <div className="space-y-5 lg:space-y-6">
+      <PageHeader
+        eyebrow="实时统计"
+        title="流量"
+        description={
+          traffic.isLoading
+            ? "正在读取 Surge 网络接口、策略连接器与实时流量数据…"
+            : `启动于 ${formatStartTime(startTimeMs)} · 1 秒采样 · 最多保留最近 30 分钟`
+        }
+      />
 
       {traffic.isError ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-            <AlertTriangle className="h-7 w-7 text-danger" />
-            <p className="text-sm font-medium text-danger">实时统计加载失败</p>
-            <p className="text-xs text-text-tertiary">无法从 Surge 获取实时流量数据。</p>
-            <Button variant="secondary" size="sm" className="mt-3" onClick={() => traffic.refetch()}>
-              重新加载
-            </Button>
+          <CardContent>
+            <ErrorStateView error={traffic.error} api="/v1/traffic" onRetry={() => traffic.refetch()} />
           </CardContent>
         </Card>
       ) : traffic.isLoading ? (
-        <div className="space-y-6">
-          <Card>
-            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>网络接口</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-40 w-full" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>连接器统计</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-40 w-full" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>流量趋势</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-64 w-full" />
-            </CardContent>
-          </Card>
+        <div className="space-y-5">
+          <Skeleton className="h-28 w-full rounded-[16px]" />
+          <Card><CardContent><Skeleton className="h-40 w-full" /></CardContent></Card>
+          <Card><CardContent><Skeleton className="h-52 w-full" /></CardContent></Card>
+          <Card><CardContent><Skeleton className="h-72 w-full" /></CardContent></Card>
         </div>
       ) : (
         <>
-          {/* 运行信息 — Surge session start + uptime */}
-          <Card>
-            <CardHeader>
-              <CardTitle>运行信息</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex items-start gap-3">
-                <CalendarDays className="mt-0.5 h-4 w-4 text-text-tertiary" aria-hidden="true" />
-                <div>
-                  <p className="text-[13px] text-text-secondary">开启时间</p>
-                  <p className="mt-0.5 text-sm font-medium tabular-nums text-text-primary">
-                    {formatStartTime(startTimeMs)}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Clock3 className="mt-0.5 h-4 w-4 text-text-tertiary" aria-hidden="true" />
-                <div>
-                  <p className="text-[13px] text-text-secondary">运行时长</p>
-                  <p className="mt-0.5 text-sm font-medium tabular-nums text-text-primary">
-                    {uptimeMs !== undefined ? formatUptime(uptimeMs) : "—"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <MetricStrip
+            items={[
+              { label: "运行时长", value: uptimeMs !== undefined ? formatUptime(uptimeMs) : "—", detail: "当前 Surge 会话", tone: "success" },
+              { label: "网络接口", value: interfaceRows.length, detail: "interface", tone: "accent" },
+              { label: "连接器", value: connectorRows.length, detail: "connector", tone: "accent" },
+              { label: "当前总速率", value: `${formatBytes(currentRate)}/s`, detail: "上传 + 下载", tone: currentRate > 0 ? "success" : "muted" },
+            ]}
+          />
 
-          {/* 网络接口 */}
           <Card>
-            <CardHeader>
-              <CardTitle>网络接口</CardTitle>
+            <CardHeader className="flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle>网络接口</CardTitle>
+                <p className="mt-1 text-xs text-text-tertiary">设备接口的累计流量、当前速率与峰值速率。</p>
+              </div>
+              <span className="text-xs tabular-nums text-text-tertiary">{interfaceRows.length} 个接口</span>
             </CardHeader>
             <CardContent>
               <TrafficStatsTable
@@ -220,10 +164,13 @@ export function TrafficPage() {
             </CardContent>
           </Card>
 
-          {/* 连接器实时统计 */}
           <Card>
-            <CardHeader>
-              <CardTitle>连接器统计</CardTitle>
+            <CardHeader className="flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle>连接器统计</CardTitle>
+                <p className="mt-1 text-xs text-text-tertiary">按策略连接器查看累计与实时流量，便于识别主要出口。</p>
+              </div>
+              <span className="text-xs tabular-nums text-text-tertiary">{connectorRows.length} 个连接器</span>
             </CardHeader>
             <CardContent>
               <TrafficStatsTable
@@ -234,29 +181,30 @@ export function TrafficPage() {
             </CardContent>
           </Card>
 
-          {/* 流量趋势 — chart stays, KPI becomes a lightweight summary line */}
           <Card>
             <CardHeader className="flex-row items-center justify-between gap-3">
               <div>
                 <CardTitle>流量趋势</CardTitle>
-                <p className="mt-0.5 text-xs text-text-tertiary">1 秒采样 · 保留最近 30 分钟</p>
+                <p className="mt-0.5 text-xs text-text-tertiary">1 秒采样 · 切换时间窗口不会丢失已采集的 30 分钟缓存</p>
               </div>
               <SegmentedControl<Range> label="时间范围" options={RANGES} value={range} onChange={setRange} />
             </CardHeader>
             <CardContent>
-              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <SummaryStat label="当前上传" value={formatBytes(summary?.uploadRate ?? 0) + "/s"} />
-                <SummaryStat label="当前下载" value={formatBytes(summary?.downloadRate ?? 0) + "/s"} />
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <SummaryStat label="当前上传" value={`${formatBytes(summary?.uploadRate ?? 0)}/s`} tone="upload" />
+                <SummaryStat label="当前下载" value={`${formatBytes(summary?.downloadRate ?? 0)}/s`} tone="download" />
                 <SummaryStat label="窗口上传" value={formatBytes(totals.upload)} />
                 <SummaryStat label="窗口下载" value={formatBytes(totals.download)} />
               </div>
               {windowSamples.length === 0 ? (
-                <div className="flex h-64 items-center justify-center text-sm text-text-tertiary">
-                  正在等待实时流量样本…
-                </div>
+                <div className="flex h-64 items-center justify-center text-sm text-text-tertiary">正在等待实时流量样本…</div>
               ) : (
                 <TrafficChart
-                  series={windowSamples.map((s) => ({ time: s.time, upload: s.uploadRate, download: s.downloadRate }))}
+                  series={windowSamples.map((sample) => ({
+                    time: sample.time,
+                    upload: sample.uploadRate,
+                    download: sample.downloadRate,
+                  }))}
                 />
               )}
             </CardContent>
@@ -267,12 +215,14 @@ export function TrafficPage() {
   );
 }
 
-/** Compact stat cell used above the trend chart (kept light on purpose). */
-function SummaryStat({ label, value }: { label: string; value: string }) {
+function SummaryStat({ label, value, tone }: { label: string; value: string; tone?: "upload" | "download" }) {
   return (
-    <div className="rounded-sm border border-border bg-elevated/40 px-3 py-2.5">
-      <p className="text-xs text-text-tertiary">{label}</p>
-      <p className="mt-0.5 text-[15px] font-semibold tabular-nums text-text-primary">{value}</p>
+    <div className="rounded-[12px] bg-surface-tertiary/55 px-3 py-2.5">
+      <div className="flex items-center gap-2 text-xs text-text-tertiary">
+        {tone && <span className={tone === "upload" ? "h-1.5 w-1.5 rounded-pill bg-chart-upload" : "h-1.5 w-1.5 rounded-pill bg-chart-download"} />}
+        <span>{label}</span>
+      </div>
+      <p className="mt-1 text-[15px] font-semibold tabular-nums text-text-primary">{value}</p>
     </div>
   );
 }

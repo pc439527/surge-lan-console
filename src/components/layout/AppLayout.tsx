@@ -7,7 +7,7 @@ import { TopBar } from "./TopBar";
 
 const DATA_DENSE_PATHS = ["/", "/configuration", "/requests", "/traffic", "/dns", "/rules", "/events"];
 const MEDIUM_PATHS = ["/policies", "/node-quality"];
-const COMPACT_PREFIXES = ["/fleet", "/health"];
+const COMPACT_PREFIXES = ["/fleet", "/health", "/modules", "/scripts"];
 
 function pathMatches(pathname: string, paths: string[]) {
   return paths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -28,7 +28,7 @@ export function AppLayout() {
 
   return (
     <div className="app-shell min-h-screen">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((current) => !current)} />
 
       <div className={cn("transition-[padding] duration-page ease-apple", collapsed ? "lg:pl-[72px]" : "lg:pl-[236px]")}>
         <TopBar />

@@ -4,6 +4,8 @@ import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { MetricStrip } from "@/components/ui/MetricStrip";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
@@ -14,12 +16,6 @@ import type { RuleInfo } from "@/api/types";
 import { cn } from "@/lib/cn";
 import { CapabilityNotice } from "@/features/shared/CapabilityNotice";
 import { useCapabilityFeature } from "@/features/shared/capability";
-
-/**
- * Rules (OPTIMIZATION_PLAN Task 05, §39–40).
- * Normalized via normalizeRules — a failed parse shows "解析失败", never
- * "没有规则". Search + type filter, with the total count in the footer.
- */
 
 const TYPE_FILTERS = ["all", "DOMAIN", "RULE-SET", "IP-CIDR", "GEOIP", "FINAL", "DOMAIN-SUFFIX", "PROCESS-NAME"];
 
@@ -32,7 +28,6 @@ export function RulesPage() {
 
   useKeyboardShortcuts({ "/": () => searchRef.current?.focus() });
 
-  // v0.3.0：能力探测确认平台不支持 Rules API 时直接给出解释。
   const capRules = useCapabilityFeature("rules");
   const capUnsupported = capRules === "unsupported";
 
@@ -52,117 +47,129 @@ export function RulesPage() {
     return counts;
   }, [rulesQuery.data]);
 
-  // v0.3.0 汇总条：按数量降序列出前 5 类规则。
   const topRuleTypes = useMemo(() => {
-    return [...typeCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
+    return [...typeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   }, [typeCounts]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
     return (rulesQuery.data ?? []).filter((rule) => {
       if (typeFilter !== "all" && rule.type !== typeFilter) return false;
-      if (q) {
-        const content = (rule.content ?? "").toLowerCase();
-        const policy = (rule.policy ?? "").toLowerCase();
-        const type = (rule.type ?? "").toLowerCase();
-        if (!content.includes(q) && !policy.includes(q) && !type.includes(q)) return false;
-      }
-      return true;
+      if (!query) return true;
+      return [rule.content ?? "", rule.policy ?? "", rule.type ?? ""]
+        .some((value) => value.toLowerCase().includes(query));
     });
   }, [rulesQuery.data, search, typeFilter]);
 
-  if (!client) return <NoClientNotice page="Rules" />;
+  if (!client) return <NoClientNotice page="规则" />;
+
+  const totalRules = rulesQuery.data?.length ?? 0;
+  const primaryType = topRuleTypes[0];
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-[26px] font-semibold text-text-primary">Rules</h1>
-        <p className="mt-0.5 text-sm text-text-secondary">当前配置的活动规则集 · 共 {(rulesQuery.data ?? []).length} 条</p>
-      </header>
+    <div className="space-y-5 lg:space-y-6">
+      <PageHeader
+        eyebrow="Surge"
+        title="规则"
+        description="查看当前配置正在使用的规则，并按类型、内容或策略快速筛选。"
+      />
 
       {capUnsupported ? (
         <CapabilityNotice feature="rules" api="/v1/rules" />
       ) : (
-      <>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-          <Input ref={searchRef} className="pl-9" placeholder="搜索规则内容、策略或类型…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {TYPE_FILTERS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setTypeFilter(f)}
-              className={cn(
-                "rounded-pill border border-border px-2.5 py-1 text-xs font-medium transition-colors duration-hover",
-                typeFilter === f
-                  ? "border-accent/40 bg-accent/12 text-accent"
-                  : "text-text-secondary hover:bg-surface hover:text-text-primary",
-              )}
-            >
-              {f === "all" ? "ALL" : f}
-              {f !== "all" && typeCounts.get(f) !== undefined && (
-                <span className="ml-1 text-[10px] text-text-tertiary">{typeCounts.get(f)}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+        <>
+          <MetricStrip
+            items={[
+              { label: "规则总数", value: totalRules, detail: "当前配置", tone: "accent" },
+              { label: "当前匹配", value: filtered.length, detail: typeFilter === "all" ? "全部类型" : typeFilter, tone: "success" },
+              { label: "规则类型", value: typeCounts.size, detail: "已识别类型", tone: "muted" },
+              { label: "主要类型", value: primaryType?.[0] ?? "—", detail: primaryType ? `${primaryType[1]} 条` : "暂无数据", tone: "muted" },
+            ]}
+          />
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-tertiary">
-        <span>共 {(rulesQuery.data ?? []).length} 条</span>
-        {topRuleTypes.map(([type, count]) => (
-          <span key={type} className="font-mono">{type} {count}</span>
-        ))}
-      </div>
+          <div className="content-panel rounded-[16px] p-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+                <Input
+                  ref={searchRef}
+                  className="pl-9"
+                  placeholder="搜索规则内容、策略或类型…"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+              <div className="scrollbar-none flex max-w-full gap-1.5 overflow-x-auto pb-0.5 lg:max-w-[62%]">
+                {TYPE_FILTERS.map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    aria-pressed={typeFilter === filter}
+                    onClick={() => setTypeFilter(filter)}
+                    className={cn(
+                      "shrink-0 rounded-pill border border-border px-2.5 py-1.5 text-xs font-medium transition-colors duration-hover",
+                      typeFilter === filter
+                        ? "border-accent/40 bg-accent/12 text-accent"
+                        : "text-text-secondary hover:bg-surface hover:text-text-primary",
+                    )}
+                  >
+                    {filter === "all" ? "全部" : filter}
+                    {filter !== "all" && typeCounts.get(filter) !== undefined && (
+                      <span className="ml-1 text-[11px] text-text-tertiary">{typeCounts.get(filter)}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-text-tertiary">
+              <span>显示 {filtered.length} / {totalRules}</span>
+              {topRuleTypes.map(([type, count]) => (
+                <span key={type} className="font-mono">{type} {count}</span>
+              ))}
+            </div>
+          </div>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>规则集</CardTitle>
-          <span className="text-xs text-text-tertiary">{filtered.length} 条</span>
-        </CardHeader>
-        <CardContent>
-          {rulesQuery.isLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          ) : rulesQuery.isError ? (
-            <ErrorStateView error={rulesQuery.error} api="/v1/rules" compact onRetry={() => rulesQuery.refetch()} />
-          ) : rulesQuery.data?.length === 0 ? (
-            <DataEmpty
-              title="没有返回规则"
-              description="请求记录显示规则正在执行，但 /v1/rules 未返回数据 — 可能是 API 响应结构解析失败，请到「设置 → API Diagnostics」查看 Raw Structure。"
-              compact
-            />
-          ) : filtered.length === 0 ? (
-            <DataEmpty title="没有匹配的规则" description="调整搜索词或类型筛选后重试。" compact />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Type</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Content</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Policy</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((rule, i) => (
-                    <RuleRow key={i} rule={rule} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      </>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>规则集</CardTitle>
+              <span className="text-xs tabular-nums text-text-tertiary">{filtered.length} 条</span>
+            </CardHeader>
+            <CardContent>
+              {rulesQuery.isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : rulesQuery.isError ? (
+                <ErrorStateView error={rulesQuery.error} api="/v1/rules" compact onRetry={() => rulesQuery.refetch()} />
+              ) : rulesQuery.data?.length === 0 ? (
+                <DataEmpty
+                  title="没有返回规则"
+                  description="请求记录显示规则正在执行，但 /v1/rules 未返回数据。可能是 API 响应结构解析失败，请到「设置 → API 诊断」查看原始结构。"
+                  compact
+                />
+              ) : filtered.length === 0 ? (
+                <DataEmpty title="没有匹配的规则" description="调整搜索词或类型筛选后重试。" compact />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">类型</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">内容</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">策略</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((rule, index) => <RuleRow key={index} rule={rule} />)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );
@@ -170,11 +177,13 @@ export function RulesPage() {
 
 function RuleRow({ rule }: { rule: RuleInfo }) {
   return (
-    <tr className="border-b border-border/50">
+    <tr className="border-b border-border/50 transition-colors duration-hover hover:bg-elevated/45">
       <td className="px-3 py-2.5 align-top">
         <Badge variant="muted" className="font-mono text-[11px]">{rule.type ?? "—"}</Badge>
       </td>
-      <td className="px-3 py-2.5 font-mono text-xs text-text-primary">{rule.content || "—"}</td>
+      <td className="max-w-[900px] px-3 py-2.5 font-mono text-xs text-text-primary">
+        <span className="block break-all">{rule.content || "—"}</span>
+      </td>
       <td className="px-3 py-2.5 text-[13px] text-text-secondary">{rule.policy || "—"}</td>
     </tr>
   );
