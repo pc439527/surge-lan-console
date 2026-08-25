@@ -169,6 +169,23 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
         ON traffic_rollups(connection_id, bucket_seconds, bucket_start);
     `,
   },
+  {
+    version: 7,
+    sql: `
+      CREATE TABLE IF NOT EXISTS profile_snapshots (
+        id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        sha256 TEXT NOT NULL,
+        profile_name TEXT NOT NULL,
+        content_text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK(source IN ('scheduled', 'manual', 'reload')),
+        captured_at TEXT NOT NULL,
+        UNIQUE(connection_id, sha256)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS idx_profile_snapshots_history
+        ON profile_snapshots(connection_id, captured_at DESC);
+    `,
+  },
 ];
 
 export class AppDatabase {
