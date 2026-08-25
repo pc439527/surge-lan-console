@@ -14,6 +14,7 @@ import { parsePolicyNodeHealth } from "./policy-health.js";
 import { ProfileHistoryService } from "./profile-history.js";
 import { RetentionService } from "./retention-service.js";
 import type { RuntimeVault } from "./runtime-vault.js";
+import { parseRuntimeMetrics, uptimeFromTraffic } from "./runtime-metrics.js";
 import type { SurgeTransport, SurgeProxyResult } from "./surge-transport.js";
 import { TrafficAnalyticsService } from "./traffic-analytics.js";
 
@@ -80,6 +81,8 @@ const MIN_INTERVAL: Record<JobType, number> = {
 
 const EVENT_CURSOR_LIMIT = 400;
 const EVENT_WINDOW_LIMIT = 200;
+const RUNTIME_SAMPLE_INTERVAL_MS = 5 * 60_000;
+const RUNTIME_UNSUPPORTED_RETRY_MS = 6 * 60 * 60_000;
 
 export class SchedulerService {
   private timer: NodeJS.Timeout | null = null;
@@ -88,6 +91,8 @@ export class SchedulerService {
   private readonly trafficAnalytics: TrafficAnalyticsService;
   private readonly profileHistory: ProfileHistoryService;
   private readonly backups: BackupService | null;
+  private readonly lastRuntimeSampleAt = new Map<string, number>();
+  private readonly runtimeUnsupportedUntil = new Map<string, number>();
   private announcedUnlock = false;
 
   constructor(
@@ -117,6 +122,8 @@ export class SchedulerService {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.running.clear();
+    this.lastRuntimeSampleAt.clear();
+    this.runtimeUnsupportedUntil.clear();
   }
 
   ensureDefaultsForAll(): void {
@@ -389,6 +396,67 @@ export class SchedulerService {
     const sampledAt = Date.now();
     this.storeSample(connectionId, "metrics", result.body, sampledAt);
     this.trafficAnalytics.ingest(connectionId, result.body, sampledAt);
+    await this.collectRuntimeMetrics(connectionId, credentials, result.body, sampledAt);
+  }
+
+  private async collectRuntimeMetrics(
+    connectionId: string,
+    credentials: Parameters<SurgeTransport["request"]>[0],
+    trafficBody: Buffer,
+    sampledAt: number,
+  ): Promise<void> {
+    const lastSample = this.lastRuntimeSampleAt.get(connectionId) ?? 0;
+    if (sampledAt - lastSample < RUNTIME_SAMPLE_INTERVAL_MS) return;
+    this.lastRuntimeSampleAt.set(connectionId, sampledAt);
+
+    const fallbackUptime = uptimeFromTraffic(trafficBody, sampledAt);
+    let source: "metrics" | "traffic" = "traffic";
+    let uptimeSeconds = fallbackUptime;
+    let memoryBytes: number | null = null;
+    let activeRequests: number | null = null;
+    let dnsCacheEntries: number | null = null;
+    let activeBans: number | null = null;
+
+    const unsupportedUntil = this.runtimeUnsupportedUntil.get(connectionId) ?? 0;
+    if (sampledAt >= unsupportedUntil) {
+      try {
+        const result = await this.surge.request(credentials, "GET", "/v1/metrics", null, { accept: "text/plain" }, 5_000);
+        if (result.statusCode >= 200 && result.statusCode < 300) {
+          try {
+            const parsed = parseRuntimeMetrics(result.body);
+            source = "metrics";
+            uptimeSeconds = parsed.uptimeSeconds ?? fallbackUptime;
+            memoryBytes = parsed.memoryBytes;
+            activeRequests = parsed.activeRequests;
+            dnsCacheEntries = parsed.dnsCacheEntries;
+            activeBans = parsed.activeBans;
+            this.runtimeUnsupportedUntil.delete(connectionId);
+          } catch {
+            this.runtimeUnsupportedUntil.set(connectionId, sampledAt + RUNTIME_UNSUPPORTED_RETRY_MS);
+          }
+        } else if ([404, 405, 501].includes(result.statusCode)) {
+          this.runtimeUnsupportedUntil.set(connectionId, sampledAt + RUNTIME_UNSUPPORTED_RETRY_MS);
+        }
+      } catch {
+        // Runtime metrics are optional. The primary traffic collector must keep succeeding.
+      }
+    }
+
+    if (uptimeSeconds === null && memoryBytes === null) return;
+    this.storeSample(
+      connectionId,
+      "runtime-metrics",
+      Buffer.from(JSON.stringify({
+        source,
+        uptimeSeconds,
+        memoryBytes,
+        activeRequests,
+        dnsCacheEntries,
+        activeBans,
+        measuredAt: new Date(sampledAt).toISOString(),
+      })),
+      sampledAt,
+    );
   }
 
   private async collectEvents(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
