@@ -4,6 +4,7 @@ import { request as httpsRequest } from "node:https";
 import type { AppDatabase } from "./database.js";
 import type { ConsoleEvent, ConsoleEventType, EventBus } from "./event-bus.js";
 import { CoreError } from "./errors.js";
+import { providerBackoffRemainingMs } from "./notification-backoff.js";
 import type { RuntimeVault } from "./runtime-vault.js";
 import type { SecretVault } from "./secret-vault.js";
 
@@ -41,6 +42,7 @@ interface RuleRow {
 }
 
 interface EventStateRow {
+  /** True only after the active condition was successfully delivered. */
   active: number;
   last_sent_at: string | null;
 }
@@ -193,8 +195,14 @@ export class NotificationService {
     const row = this.requireChannelRow(id);
     if (!row.secret_id) throw new CoreError("channel_not_configured", 409, "Bark 渠道尚未配置 Token 地址。");
     const endpoint = this.vault.read(row.secret_id, "bark-endpoint", vaultKey);
-    await this.sendBark(endpoint, "Surge LAN Console", "Bark 通知测试成功");
-    this.recordHistory(id, "test", `test:${id}`, "Surge LAN Console", "Bark 通知测试成功", "sent", null);
+    try {
+      await this.sendBark(endpoint, "Surge LAN Console", "Bark 通知测试成功");
+      this.recordHistory(id, "test", `test:${id}`, "Surge LAN Console", "Bark 通知测试成功", "sent", null);
+    } catch (error) {
+      const message = error instanceof CoreError ? error.message : "Bark 推送失败";
+      this.recordHistory(id, "test", `test:${id}`, "Surge LAN Console", "Bark 通知测试失败", "error", message);
+      throw error;
+    }
   }
 
   private async handleEvent(event: ConsoleEvent): Promise<void> {
@@ -217,7 +225,11 @@ export class NotificationService {
       SELECT active, last_sent_at FROM event_states WHERE channel_id = ? AND fingerprint = ?
     `, channel.id, event.fingerprint);
 
+    // Recovery is meaningful only when the corresponding active condition was
+    // actually delivered. A condition suppressed entirely by Quiet Hours must
+    // never produce a standalone "recovered" notification later.
     if (event.recovery && !state?.active) return;
+
     if (!event.recovery && state?.active && state.last_sent_at) {
       const elapsed = Date.now() - new Date(state.last_sent_at).getTime();
       if (elapsed < rule.cooldown_seconds * 1000) {
@@ -225,9 +237,29 @@ export class NotificationService {
         return;
       }
     }
+
     if (this.inQuietHours(rule)) {
-      this.setEventState(channel.id, event.fingerprint, event.recovery ? false : true, state?.last_sent_at ?? null);
+      // Do not mark a newly observed failure as active when nobody was notified.
+      // If a previously-notified failure recovers during Quiet Hours, clear its
+      // active state so it cannot emit a stale Recovery after the quiet window.
+      if (event.recovery && state?.active) {
+        this.setEventState(channel.id, event.fingerprint, false, state.last_sent_at);
+      }
       this.recordHistory(channel.id, event.type, event.fingerprint, event.title, event.body, "suppressed", "quiet-hours");
+      return;
+    }
+
+    const providerBackoffMs = this.providerBackoffRemaining(channel.id);
+    if (providerBackoffMs > 0) {
+      this.recordHistory(
+        channel.id,
+        event.type,
+        event.fingerprint,
+        event.title,
+        event.body,
+        "suppressed",
+        `provider-backoff:${Math.ceil(providerBackoffMs / 1000)}s`,
+      );
       return;
     }
 
@@ -244,6 +276,19 @@ export class NotificationService {
     } finally {
       key.fill(0);
     }
+  }
+
+  private providerBackoffRemaining(channelId: string): number {
+    const attempts = this.database.queryAll<{ status: "sent" | "error"; created_at: string }>(`
+      SELECT status, created_at
+      FROM notification_history
+      WHERE channel_id = ? AND status IN ('sent', 'error')
+      ORDER BY created_at DESC
+      LIMIT 10
+    `, channelId);
+    return providerBackoffRemainingMs(
+      attempts.map((attempt) => ({ status: attempt.status, createdAt: attempt.created_at })),
+    );
   }
 
   private async sendBark(endpoint: string, title: string, body: string): Promise<void> {
