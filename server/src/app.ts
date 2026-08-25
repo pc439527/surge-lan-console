@@ -22,7 +22,13 @@ import { TrafficAnalyticsService, type TrafficRange } from "./traffic-analytics.
 const SESSION_COOKIE = "slc_session";
 const MAX_JSON_BODY_BYTES = 256 * 1024;
 const MAX_PROXY_BODY_BYTES = 2 * 1024 * 1024;
-interface CoreAppOptions { databasePath: string; sessionIdleMs: number; sessionAbsoluteMs: number; now?: () => number }
+interface CoreAppOptions {
+  databasePath: string;
+  sessionIdleMs: number;
+  sessionAbsoluteMs: number;
+  now?: () => number;
+  onRestartRequested?: (restoreSucceeded: boolean) => void;
+}
 interface AttemptBucket { failures: number; windowStartedAt: number; blockedUntil: number }
 
 class UnlockRateLimiter {
@@ -107,6 +113,17 @@ export function createCoreApp(options: CoreAppOptions) {
   const profileHistory = new ProfileHistoryService(database, now);
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
+  let runtimeClosed = false;
+
+  const closeRuntime = () => {
+    if (runtimeClosed) return;
+    runtimeClosed = true;
+    scheduler.stop();
+    notifications.close();
+    sessions.clear();
+    runtimeVault.lock();
+    database.close();
+  };
 
   const server = createServer(async (request, response) => {
     const method = request.method ?? "GET"; const url = new URL(request.url ?? "/", "http://localhost"); const pathname = url.pathname; const sessionToken = cookieValue(request, SESSION_COOKIE);
@@ -166,6 +183,39 @@ export function createCoreApp(options: CoreAppOptions) {
         const id = stringField(body, "id").trim();
         if (!id) throw new CoreError("backup_id_required", 400, "备份校验需要 id。");
         sendJson(response, 200, await requireBackups(backups).validate(id));
+        return;
+      }
+      if (method === "POST" && pathname === "/api/backups/restore") {
+        requireSession(sessions, sessionToken);
+        const body = await readJson(request);
+        const id = stringField(body, "id").trim();
+        const expectedSha256 = stringField(body, "expectedSha256").trim().toLowerCase();
+        if (!id) throw new CoreError("backup_id_required", 400, "数据库恢复需要备份 id。");
+        const prepared = await requireBackups(backups).prepareRestore(id, expectedSha256);
+        sendJson(response, 202, prepared.result);
+
+        response.once("finish", () => {
+          server.once("close", () => {
+            void prepared.apply()
+              .then(() => {
+                console.log(`[core] SQLite restore applied from ${prepared.result.backup.id}; restart required`);
+                options.onRestartRequested?.(true);
+              })
+              .catch((error) => {
+                const message = error instanceof Error ? error.message : "unknown restore error";
+                console.error(`[core] SQLite restore failed after shutdown: ${message}`);
+                options.onRestartRequested?.(false);
+              });
+          });
+          try {
+            server.close();
+          } catch (error) {
+            prepared.cancel();
+            const message = error instanceof Error ? error.message : "unknown close error";
+            console.error(`[core] unable to stop server for SQLite restore: ${message}`);
+            options.onRestartRequested?.(false);
+          }
+        });
         return;
       }
 
@@ -272,6 +322,6 @@ export function createCoreApp(options: CoreAppOptions) {
     }
   });
 
-  server.on("close", () => { scheduler.stop(); notifications.close(); sessions.clear(); runtimeVault.lock(); database.close(); });
+  server.on("close", closeRuntime);
   return { server, address(): AddressInfo | null { const address = server.address(); return address && typeof address !== "string" ? address : null; } };
 }
