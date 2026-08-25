@@ -49,6 +49,14 @@ export function HealthPage() {
     () => (capability.data ? healthFromCapability(capability.data) : null),
     [capability.data],
   );
+  const refresh = async () => {
+    if (connectionId && !demoMode) {
+      await Promise.all([capability.refetch(), runtime.refetch()]);
+      return;
+    }
+    await capability.refetch();
+  };
+  const refreshing = capability.isFetching || (Boolean(connectionId) && !demoMode && runtime.isFetching);
 
   if (!client) return <NoClientNotice page="Health Center" />;
 
@@ -59,13 +67,8 @@ export function HealthPage() {
         title="健康中心"
         description={<>连接、运行状态与平台能力 · {connection?.name ?? (demoMode ? "演示模式" : "当前连接")}</>}
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void Promise.all([capability.refetch(), runtime.refetch()])}
-            disabled={capability.isFetching || runtime.isFetching}
-          >
-            <RefreshCw className={`h-4 w-4 ${capability.isFetching || runtime.isFetching ? "animate-spin" : ""}`} />
+          <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             重新检查
           </Button>
         }
