@@ -187,7 +187,8 @@ function compareBuild(current: BuildIdentity, latest: RemoteBuildIdentity): Upda
   if (isKnown(current.version) && latest.version) {
     const comparison = compareVersions(current.version, latest.version);
     if (comparison < 0) return "update-available";
-    if (comparison >= 0) return "current";
+    if (comparison > 0) return "current";
+    if (comparison === 0) return latest.commit && !isKnown(current.commit) ? "unknown" : "current";
   }
   return "unknown";
 }
