@@ -10,12 +10,13 @@ import type { EventBus } from "./event-bus.js";
 import { parseSurgeEvents } from "./event-collector.js";
 import { CoreError } from "./errors.js";
 import { parsePolicyNodeHealth } from "./policy-health.js";
+import { ProfileHistoryService } from "./profile-history.js";
 import { RetentionService } from "./retention-service.js";
 import type { RuntimeVault } from "./runtime-vault.js";
 import type { SurgeTransport, SurgeProxyResult } from "./surge-transport.js";
 import { TrafficAnalyticsService } from "./traffic-analytics.js";
 
-export type JobType = "device-heartbeat" | "metrics" | "events" | "dns-health" | "node-health" | "profile-reload" | "daily-digest";
+export type JobType = "device-heartbeat" | "metrics" | "events" | "dns-health" | "node-health" | "profile-snapshot" | "profile-reload" | "daily-digest";
 
 interface JobRow {
   id: string;
@@ -60,6 +61,7 @@ const DEFAULTS: Array<{ type: JobType; interval: number; enabled: boolean }> = [
   { type: "events", interval: 30, enabled: true },
   { type: "dns-health", interval: 600, enabled: true },
   { type: "node-health", interval: 1800, enabled: true },
+  { type: "profile-snapshot", interval: 21_600, enabled: true },
   { type: "profile-reload", interval: 21_600, enabled: false },
 ];
 
@@ -69,6 +71,7 @@ const MIN_INTERVAL: Record<JobType, number> = {
   events: 30,
   "dns-health": 60,
   "node-health": 60,
+  "profile-snapshot": 900,
   "profile-reload": 300,
   "daily-digest": 3600,
 };
@@ -81,6 +84,7 @@ export class SchedulerService {
   private readonly running = new Set<string>();
   private readonly retention: RetentionService;
   private readonly trafficAnalytics: TrafficAnalyticsService;
+  private readonly profileHistory: ProfileHistoryService;
   private announcedUnlock = false;
 
   constructor(
@@ -92,6 +96,7 @@ export class SchedulerService {
   ) {
     this.retention = new RetentionService(database);
     this.trafficAnalytics = new TrafficAnalyticsService(database);
+    this.profileHistory = new ProfileHistoryService(database);
   }
 
   start(): void {
@@ -215,6 +220,7 @@ export class SchedulerService {
         case "events": await this.collectEvents(job.connection_id, credentials); return;
         case "dns-health": await this.runDnsHealth(job, credentials); return;
         case "node-health": await this.runNodeHealth(job.connection_id, credentials); return;
+        case "profile-snapshot": await this.runProfileSnapshot(job.connection_id, credentials, "scheduled"); return;
         case "profile-reload": await this.runProfileReload(job.connection_id, credentials); return;
         default: throw new CoreError("unknown_job_type", 500, "未知自动任务类型。");
       }
@@ -343,10 +349,23 @@ export class SchedulerService {
     }
   }
 
+  private async runProfileSnapshot(
+    connectionId: string,
+    credentials: Parameters<SurgeTransport["request"]>[0],
+    source: "scheduled" | "reload",
+  ): Promise<void> {
+    const result = await this.surge.request(credentials, "GET", "/v1/profiles/current?sensitive=0", null, {}, 10_000);
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw new CoreError("profile_snapshot_http_error", 502, `配置快照读取返回 HTTP ${result.statusCode}。`);
+    }
+    this.profileHistory.capture(connectionId, result.body, source);
+  }
+
   private async runProfileReload(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
     try {
       const result = await this.surge.request(credentials, "POST", "/v1/profiles/reload", Buffer.from("{}"), { contentType: "application/json" }, 15_000);
       if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("profile_reload_error", 502, `Profile Reload 返回 HTTP ${result.statusCode}。`);
+      try { await this.runProfileSnapshot(connectionId, credentials, "reload"); } catch { /* Reload success is independent of snapshot availability. */ }
       this.events.publish({ type: "profile-reload-success", fingerprint: `profile:${connectionId}`, title: "配置重新加载成功", body: `${credentials.connection.name} 已完成 Profile Reload。`, severity: "info", connectionId });
     } catch (error) {
       this.events.publish({ type: "profile-reload-failure", fingerprint: `profile:${connectionId}`, title: "配置重新加载失败", body: `${credentials.connection.name} Profile Reload 执行失败。`, severity: "error", connectionId });
