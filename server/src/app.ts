@@ -9,6 +9,7 @@ import { EventBus } from "./event-bus.js";
 import { CoreError } from "./errors.js";
 import { HealthAnalyticsService, type HealthRange } from "./health-analytics.js";
 import { NotificationService } from "./notification-service.js";
+import { PolicyTrafficAnalyticsService } from "./policy-traffic-analytics.js";
 import { ProfileHistoryService } from "./profile-history.js";
 import { RuntimeAnalyticsService } from "./runtime-analytics.js";
 import { RuntimeVault } from "./runtime-vault.js";
@@ -99,6 +100,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const notifications = new NotificationService(database, secretVault, runtimeVault, events);
   const scheduler = new SchedulerService(database, connections, surge, events, runtimeVault);
   const trafficAnalytics = new TrafficAnalyticsService(database, now);
+  const policyTrafficAnalytics = new PolicyTrafficAnalyticsService(database, now);
   const healthAnalytics = new HealthAnalyticsService(database, now);
   const errorAnalytics = new ErrorAnalyticsService(database, now);
   const runtimeAnalytics = new RuntimeAnalyticsService(database, now);
@@ -174,6 +176,15 @@ export function createCoreApp(options: CoreAppOptions) {
         connections.get(connectionId);
         const range = trafficRange(url.searchParams.get("range"));
         sendJson(response, 200, { connectionId, range, points: trafficAnalytics.query(connectionId, range) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/analytics/policy-traffic") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "Policy Traffic Analytics 需要 connectionId。");
+        connections.get(connectionId);
+        const range = trafficRange(url.searchParams.get("range"));
+        sendJson(response, 200, { connectionId, range, policies: policyTrafficAnalytics.query(connectionId, range) });
         return;
       }
       if (method === "GET" && pathname === "/api/analytics/dns") {
