@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Clock3, Loader2, Play, RefreshCw } from "lucide-react";
+import { Check, Clock3, Loader2, Play, RefreshCw, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -126,6 +126,40 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
     },
     onError: (error) => toast.error(error instanceof CoreApiError ? error.message : "备份校验失败"),
   });
+  const restore = useMutation({
+    mutationFn: ({ id, expectedSha256 }: { id: string; expectedSha256: string }) => coreApi.restoreBackup(id, expectedSha256),
+    onSuccess: (result) => {
+      setValidations((current) => ({
+        ...current,
+        [result.backup.id]: result.backup,
+        [result.safetyBackup.id]: result.safetyBackup,
+      }));
+      toast.success("恢复已接受，Core 正在安全重启；重启后请重新输入数据密码。", { duration: 12_000 });
+    },
+    onError: (error) => toast.error(error instanceof CoreApiError ? error.message : "数据库恢复失败"),
+  });
+
+  const requestRestore = async (backup: BackupInfo) => {
+    if (restore.isPending) return;
+    let validation: BackupValidation;
+    try {
+      validation = await coreApi.validateBackup(backup.id);
+      setValidations((current) => ({ ...current, [validation.id]: validation }));
+    } catch (error) {
+      toast.error(error instanceof CoreApiError ? error.message : "恢复前校验失败");
+      return;
+    }
+    if (!validation.valid) {
+      toast.error(`备份校验失败：${validation.quickCheck}`);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `确认恢复此 SQLite 备份？\n\n${backup.id}\n\n恢复前会自动创建当前数据库的安全恢复点；随后 Core 会停止并重启。恢复完成后，数据密码、连接与历史数据都以该备份中的状态为准。`,
+    );
+    if (!confirmed) return;
+    restore.mutate({ id: backup.id, expectedSha256: validation.sha256 });
+  };
 
   return (
     <Card>
@@ -134,51 +168,69 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
           <CardTitle>SQLite 备份</CardTitle>
           <p className="mt-1 text-xs leading-5 text-text-tertiary">Online Backup · 自动 quick_check · 最近保留 30 份</p>
         </div>
-        <Button size="sm" variant="secondary" disabled={create.isPending} onClick={() => create.mutate()}>
+        <Button size="sm" variant="secondary" disabled={create.isPending || restore.isPending} onClick={() => create.mutate()}>
           {create.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           立即备份
         </Button>
       </CardHeader>
-      <CardContent className="divide-y divide-border/50">
-        {loading ? (
-          <p className="py-4 text-sm text-text-secondary">加载备份…</p>
-        ) : backups.length === 0 ? (
-          <p className="py-4 text-center text-sm text-text-secondary">暂无数据库备份。</p>
-        ) : backups.slice(0, 8).map((backup) => {
-          const validation = validations[backup.id];
-          const validating = validate.isPending && validate.variables === backup.id;
-          return (
-            <div key={backup.id} className="py-3 first:pt-0 last:pb-0">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Badge variant={backup.source === "scheduled" ? "muted" : "info"}>{backup.source === "scheduled" ? "自动" : "手动"}</Badge>
-                  <span className="truncate font-mono text-[10px] text-text-secondary">{backup.id}</span>
-                </div>
-                <Button size="sm" variant="ghost" disabled={validating} onClick={() => validate.mutate(backup.id)}>
-                  {validating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  校验
-                </Button>
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-text-tertiary">
-                <span>{new Date(backup.createdAt).toLocaleString()}</span>
-                <span>{formatBytes(backup.sizeBytes)}</span>
-              </div>
-              {validation && (
-                <div className="mt-2 rounded-[10px] border border-border/45 bg-surface-tertiary/30 px-2.5 py-2 text-[10px] text-text-tertiary">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge variant={validation.valid ? "success" : "danger"}>{validation.valid ? "完整" : "异常"}</Badge>
-                    <span>schema v{validation.schemaVersion ?? "?"} · {validation.quickCheck}</span>
+      <CardContent>
+        <div className="divide-y divide-border/50">
+          {loading ? (
+            <p className="py-4 text-sm text-text-secondary">加载备份…</p>
+          ) : backups.length === 0 ? (
+            <p className="py-4 text-center text-sm text-text-secondary">暂无数据库备份。</p>
+          ) : backups.slice(0, 8).map((backup) => {
+            const validation = validations[backup.id];
+            const validating = validate.isPending && validate.variables === backup.id;
+            const source = backupSourceMeta(backup.source);
+            return (
+              <div key={backup.id} className="py-3 first:pt-0 last:pb-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant={source.variant}>{source.label}</Badge>
+                    <span className="truncate font-mono text-[10px] text-text-secondary">{backup.id}</span>
                   </div>
-                  <p className="mt-1 truncate font-mono">SHA-256 {validation.sha256}</p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button size="sm" variant="ghost" disabled={validating || restore.isPending} onClick={() => validate.mutate(backup.id)}>
+                      {validating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      校验
+                    </Button>
+                    <Button size="sm" variant="destructive" disabled={restore.isPending || validating} onClick={() => void requestRestore(backup)}>
+                      {restore.isPending && restore.variables?.id === backup.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                      恢复
+                    </Button>
+                  </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-        {backups.length > 8 && <p className="pt-3 text-center text-[10px] text-text-tertiary">仅显示最近 8 份，共 {backups.length} 份</p>}
+                <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-text-tertiary">
+                  <span>{new Date(backup.createdAt).toLocaleString()}</span>
+                  <span>{formatBytes(backup.sizeBytes)}</span>
+                </div>
+                {validation && (
+                  <div className="mt-2 rounded-[10px] border border-border/45 bg-surface-tertiary/30 px-2.5 py-2 text-[10px] text-text-tertiary">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant={validation.valid ? "success" : "danger"}>{validation.valid ? "完整" : "异常"}</Badge>
+                      <span>schema v{validation.schemaVersion ?? "?"} · {validation.quickCheck}</span>
+                    </div>
+                    <p className="mt-1 truncate font-mono">SHA-256 {validation.sha256}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {backups.length > 8 && <p className="pt-3 text-center text-[10px] text-text-tertiary">仅显示最近 8 份，共 {backups.length} 份</p>}
+        </div>
+        <div className="mt-3 rounded-[12px] border border-warning/25 bg-warning/[0.045] px-3 py-2.5 text-[10px] leading-4 text-text-tertiary">
+          恢复属于破坏性操作：Core 会重新校验 SHA-256 / quick_check / schema，自动创建“恢复点”，关闭 SQLite 后原子替换，并由容器自动重启。恢复后的数据密码与配置以备份内容为准。
+        </div>
       </CardContent>
     </Card>
   );
+}
+
+function backupSourceMeta(source: BackupInfo["source"]): { label: string; variant: "muted" | "info" | "warning" } {
+  if (source === "scheduled") return { label: "自动", variant: "muted" };
+  if (source === "restore-point") return { label: "恢复点", variant: "warning" };
+  return { label: "手动", variant: "info" };
 }
 
 function JobRow({ job, connectionName, onChanged }: { job: ScheduledJob; connectionName: string; onChanged: () => Promise<void> }) {
