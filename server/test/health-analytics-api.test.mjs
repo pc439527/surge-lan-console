@@ -76,6 +76,19 @@ test("health analytics API requires session and validates ranges", async () => {
     assert.equal(policy.status, 200);
     assert.deepEqual(await policy.json(), { connectionId: connection.id, range: "7d", nodes: [] });
 
+    const errors = await fetch(
+      `${core.baseUrl}/api/analytics/errors?connectionId=${encodeURIComponent(connection.id)}&range=24h`,
+      { headers: { cookie } },
+    );
+    assert.equal(errors.status, 200);
+    const errorPayload = await errors.json();
+    assert.equal(errorPayload.connectionId, connection.id);
+    assert.equal(errorPayload.range, "24h");
+    assert.equal(errorPayload.notificationFailuresGlobal, 0);
+    assert.ok(Array.isArray(errorPayload.points));
+    assert.ok(errorPayload.points.length >= 24);
+    assert.equal(errorPayload.points.every((point) => point.total === 0), true);
+
     const invalidRange = await fetch(
       `${core.baseUrl}/api/analytics/dns?connectionId=${encodeURIComponent(connection.id)}&range=30d`,
       { headers: { cookie } },
