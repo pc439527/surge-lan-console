@@ -11,7 +11,7 @@ import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { healthFromCapability, type HealthStatus } from "@/domain/health";
 import { useCapabilitiesQuery } from "@/features/shared/capability";
-import { coreApi, type ErrorTrendPoint, type HealthAnalyticsRange } from "@/lib/core-api";
+import { coreApi, type HealthAnalyticsRange, type RuntimeTrendPoint } from "@/lib/core-api";
 import { cn } from "@/lib/cn";
 
 const meta: Record<HealthStatus, { label: string; variant: "success" | "warning" | "danger" | "muted" }> = {
@@ -38,10 +38,10 @@ function statusIcon(status: HealthStatus) {
 export function HealthPage() {
   const { client, connection, connectionId, demoMode } = useSurgeClientState();
   const capability = useCapabilitiesQuery();
-  const [errorRange, setErrorRange] = useState<HealthAnalyticsRange>("24h");
-  const errors = useQuery({
-    queryKey: ["core", "analytics", "errors", connectionId, errorRange],
-    queryFn: () => coreApi.getErrorAnalytics(connectionId!, errorRange),
+  const [runtimeRange, setRuntimeRange] = useState<HealthAnalyticsRange>("24h");
+  const runtime = useQuery({
+    queryKey: ["core", "analytics", "runtime", connectionId, runtimeRange],
+    queryFn: () => coreApi.getRuntimeAnalytics(connectionId!, runtimeRange),
     enabled: !!connectionId && !demoMode,
     staleTime: 60_000,
   });
@@ -57,10 +57,15 @@ export function HealthPage() {
       <PageHeader
         eyebrow="Health Center"
         title="健康中心"
-        description={<>连接、网络与平台能力 · {connection?.name ?? (demoMode ? "演示模式" : "当前连接")}</>}
+        description={<>连接、运行状态与平台能力 · {connection?.name ?? (demoMode ? "演示模式" : "当前连接")}</>}
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void capability.refetch()} disabled={capability.isFetching}>
-            <RefreshCw className={`h-4 w-4 ${capability.isFetching ? "animate-spin" : ""}`} />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void Promise.all([capability.refetch(), runtime.refetch()])}
+            disabled={capability.isFetching || runtime.isFetching}
+          >
+            <RefreshCw className={`h-4 w-4 ${capability.isFetching || runtime.isFetching ? "animate-spin" : ""}`} />
             重新检查
           </Button>
         }
@@ -79,14 +84,13 @@ export function HealthPage() {
       )}
 
       {!demoMode && connectionId && (
-        <ErrorTrendCard
-          points={errors.data?.points ?? []}
-          notificationFailuresGlobal={errors.data?.notificationFailuresGlobal ?? 0}
-          range={errorRange}
-          loading={errors.isLoading}
-          error={errors.isError ? errors.error : null}
-          onRangeChange={setErrorRange}
-          onRetry={() => void errors.refetch()}
+        <RuntimeCard
+          points={runtime.data?.points ?? []}
+          range={runtimeRange}
+          loading={runtime.isLoading}
+          error={runtime.isError ? runtime.error : null}
+          onRangeChange={setRuntimeRange}
+          onRetry={() => void runtime.refetch()}
         />
       )}
     </div>
@@ -185,39 +189,34 @@ function HealthReport({ health }: { health: ReturnType<typeof healthFromCapabili
   );
 }
 
-function ErrorTrendCard({
+function RuntimeCard({
   points,
-  notificationFailuresGlobal,
   range,
   loading,
   error,
   onRangeChange,
   onRetry,
 }: {
-  points: ErrorTrendPoint[];
-  notificationFailuresGlobal: number;
+  points: RuntimeTrendPoint[];
   range: HealthAnalyticsRange;
   loading: boolean;
   error: unknown;
   onRangeChange: (range: HealthAnalyticsRange) => void;
   onRetry: () => void;
 }) {
-  const totals = points.reduce(
-    (current, point) => ({
-      warnings: current.warnings + point.surgeWarnings,
-      errors: current.errors + point.surgeErrors,
-      jobs: current.jobs + point.jobFailures,
-    }),
-    { warnings: 0, errors: 0, jobs: 0 },
-  );
-  const incidentTotal = totals.warnings + totals.errors + totals.jobs;
+  const latest = points.at(-1) ?? null;
+  const memoryPoints = points.filter((point) => point.memoryBytes !== null);
+  const averageMemory = memoryPoints.length > 0
+    ? memoryPoints.reduce((sum, point) => sum + (point.memoryBytes ?? 0), 0) / memoryPoints.length
+    : null;
+  const peakMemory = memoryPoints.length > 0 ? Math.max(...memoryPoints.map((point) => point.memoryBytes ?? 0)) : null;
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="flex-row items-start justify-between gap-4">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-4">
         <div>
-          <CardTitle>Error Trend</CardTitle>
-          <p className="mt-1 text-xs text-text-tertiary">当前连接的 Surge warning/error 与 Scheduler failure；Bark 失败作为 Console 全局指标单独显示。</p>
+          <CardTitle>Runtime · Memory / Uptime</CardTitle>
+          <p className="mt-1 text-xs text-text-tertiary">每 5 分钟持久化；优先使用 Surge /v1/metrics，旧版本仅从 /v1/traffic.startTime 回退 Uptime。</p>
         </div>
         <div className="flex rounded-[12px] border border-border bg-surface p-0.5">
           {(["24h", "7d"] as HealthAnalyticsRange[]).map((value) => (
@@ -237,24 +236,33 @@ function ErrorTrendCard({
       </CardHeader>
       <CardContent>
         {loading ? (
-          <SkeletonTrend />
+          <DataLoading rows={3} />
         ) : error ? (
-          <ErrorStateView error={error} api="/api/analytics/errors" compact onRetry={onRetry} />
-        ) : incidentTotal === 0 && notificationFailuresGlobal === 0 ? (
-          <DataEmpty title="当前时间范围没有错误" description="Surge、Scheduler 与 Bark 都没有记录到需要关注的失败。" compact />
+          <ErrorStateView error={error} api="/api/analytics/runtime" compact onRetry={onRetry} />
+        ) : points.length === 0 ? (
+          <DataEmpty title="暂无 Runtime 历史" description="Metrics Collector 会每 5 分钟生成一条 Memory/Uptime 样本。" compact />
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-              <ErrorMetric label="Surge Error" value={totals.errors} tone="danger" />
-              <ErrorMetric label="Surge Warning" value={totals.warnings} tone="warning" />
-              <ErrorMetric label="Scheduler Failure" value={totals.jobs} tone="danger" />
-              <ErrorMetric label="Bark Failure · 全局" value={notificationFailuresGlobal} tone="muted" />
+              <RuntimeMetric label="Engine Uptime" value={latest?.uptimeSeconds === null || !latest ? "N/A" : formatDuration(latest.uptimeSeconds)} detail={latest?.source === "metrics" ? "/v1/metrics" : "traffic.startTime fallback"} />
+              <RuntimeMetric label="Memory" value={latest?.memoryBytes === null || !latest ? "N/A" : formatBytes(latest.memoryBytes)} detail={averageMemory === null ? "当前设备未暴露 Memory" : `平均 ${formatBytes(averageMemory)}`} />
+              <RuntimeMetric label="Active Requests" value={latest?.activeRequests === null || !latest ? "N/A" : String(Math.round(latest.activeRequests))} detail="当前并发请求" />
+              <RuntimeMetric label="DNS Cache" value={latest?.dnsCacheEntries === null || !latest ? "N/A" : String(Math.round(latest.dnsCacheEntries))} detail={latest?.activeBans === null || !latest ? "Unauthorized Ban N/A" : `Unauthorized Ban ${Math.round(latest.activeBans)}`} />
             </div>
-            <ErrorBars points={points} />
+
+            {memoryPoints.length > 0 ? (
+              <MemoryTrend points={memoryPoints} peakMemory={peakMemory ?? 0} />
+            ) : (
+              <div className="rounded-[14px] border border-dashed border-border px-4 py-6 text-center">
+                <p className="text-sm text-text-secondary">当前 Surge 未提供内存指标</p>
+                <p className="mt-1 text-xs text-text-tertiary">Uptime 仍由 traffic.startTime 持续记录；Memory 不做估算。</p>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-text-tertiary">
-              <span>柱高 = 当前连接每个时间桶的异常总数</span>
-              <span>24h 按 1 小时聚合 · 7d 按 6 小时聚合</span>
-              <span>Bark Failure 不进入柱状趋势，因为现有通知历史是 Console 全局口径</span>
+              <span>{points.length} 个样本</span>
+              <span>最新：{latest ? new Date(latest.sampledAt).toLocaleString() : "—"}</span>
+              <span>数据保留 7 天</span>
             </div>
           </div>
         )}
@@ -263,42 +271,55 @@ function ErrorTrendCard({
   );
 }
 
-function ErrorBars({ points }: { points: ErrorTrendPoint[] }) {
-  const max = Math.max(1, ...points.map((point) => point.total));
-  return (
-    <div className="rounded-[14px] border border-border/55 bg-surface-tertiary/20 px-3 pb-2 pt-4">
-      <div className="flex h-28 items-end gap-1" role="img" aria-label={`异常趋势，共 ${points.reduce((sum, point) => sum + point.total, 0)} 次`}>
-        {points.map((point) => (
-          <div key={point.bucketStart} className="group relative flex min-w-0 flex-1 items-end justify-center self-stretch">
-            <div
-              className={cn("w-full max-w-4 rounded-t-[4px]", point.total > 0 ? "bg-danger/65" : "bg-border/45")}
-              style={{ height: point.total > 0 ? `${Math.max(8, point.total / max * 100)}%` : "2px" }}
-            />
-            <div className="pointer-events-none absolute bottom-full z-10 mb-2 hidden w-44 rounded-[10px] border border-border bg-surface-panel p-2 text-[10px] shadow-lg group-hover:block">
-              <p className="font-medium text-text-primary">{new Date(point.bucketStart).toLocaleString()}</p>
-              <p className="mt-1 text-text-tertiary">Error {point.surgeErrors} · Warning {point.surgeWarnings} · Job {point.jobFailures}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex items-center justify-between text-[10px] text-text-tertiary">
-        <span>{points[0] ? new Date(points[0].bucketStart).toLocaleString() : "—"}</span>
-        <span>{points.at(-1) ? new Date(points.at(-1)!.bucketStart).toLocaleString() : "—"}</span>
-      </div>
-    </div>
-  );
-}
-
-function ErrorMetric({ label, value, tone }: { label: string; value: number; tone: "danger" | "warning" | "muted" }) {
-  const valueClass = tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-text-primary";
+function RuntimeMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-[12px] bg-surface-tertiary/45 px-3 py-2.5">
       <p className="text-[10px] text-text-tertiary">{label}</p>
-      <p className={cn("mt-0.5 font-mono text-xl font-semibold tabular-nums", valueClass)}>{value}</p>
+      <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-text-primary">{value}</p>
+      <p className="mt-0.5 truncate text-[10px] text-text-tertiary">{detail}</p>
     </div>
   );
 }
 
-function SkeletonTrend() {
-  return <div className="space-y-3"><div className="grid grid-cols-4 gap-2"><DataLoading rows={1} /><DataLoading rows={1} /><DataLoading rows={1} /><DataLoading rows={1} /></div><DataLoading rows={2} /></div>;
+function MemoryTrend({ points, peakMemory }: { points: RuntimeTrendPoint[]; peakMemory: number }) {
+  const width = 1000;
+  const height = 120;
+  const max = Math.max(1, peakMemory);
+  const coords = points.map((point, index) => {
+    const x = points.length <= 1 ? width / 2 : index / (points.length - 1) * width;
+    const y = height - ((point.memoryBytes ?? 0) / max) * (height - 12) - 6;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+
+  return (
+    <div className="rounded-[14px] border border-border/55 bg-surface-tertiary/20 px-3 pb-3 pt-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-text-secondary">Memory Trend</p>
+        <p className="font-mono text-[10px] text-text-tertiary">peak {formatBytes(peakMemory)}</p>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-28 w-full" role="img" aria-label="Surge 内存使用趋势">
+        <polyline points={coords} fill="none" className="stroke-accent" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="mt-1 flex items-center justify-between text-[10px] text-text-tertiary">
+        <span>{new Date(points[0]?.sampledAt ?? Date.now()).toLocaleString()}</span>
+        <span>{new Date(points.at(-1)?.sampledAt ?? Date.now()).toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(total / 86_400);
+  const hours = Math.floor((total % 86_400) / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "N/A";
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
