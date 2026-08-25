@@ -1,4 +1,4 @@
-import { useMemo, type PropsWithChildren } from "react";
+import { useEffect, useMemo, type PropsWithChildren } from "react";
 import { MockSurgeClient } from "@/api/mock/mock-client";
 import type { SurgeClient } from "@/api/surge-client";
 import { buildClientFor, useConnectionStore } from "@/stores/connection-store";
@@ -8,7 +8,12 @@ import { SurgeClientContext, type SurgeClientContextValue } from "./surge-client
 export function SurgeClientProvider({ children }: PropsWithChildren) {
   const connections = useConnectionStore((s) => s.connections);
   const activeId = useConnectionStore((s) => s.activeConnectionId);
+  const hydrate = useConnectionStore((s) => s.hydrate);
   const demoMode = usePreferencesStore((s) => s.demoMode);
+
+  useEffect(() => {
+    if (!demoMode) void hydrate();
+  }, [demoMode, hydrate]);
 
   const value = useMemo<SurgeClientContextValue>(() => {
     if (demoMode) {
@@ -21,14 +26,12 @@ export function SurgeClientProvider({ children }: PropsWithChildren) {
       };
     }
     const conn = connections.find((c) => c.id === activeId);
-    if (!conn) {
-      return { connectionId: null, connection: null, client: null, missingKey: false, demoMode: false };
-    }
+    if (!conn) return { connectionId: null, connection: null, client: null, missingKey: false, demoMode: false };
     const built = buildClientFor(conn);
     return {
       connectionId: conn.id,
       connection: conn,
-      client: built ? built.client : null,
+      client: built?.client ?? null,
       missingKey: !built,
       demoMode: false,
     };
