@@ -148,6 +148,27 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
         ON collector_samples(sampled_at);
     `,
   },
+  {
+    version: 6,
+    sql: `
+      CREATE TABLE IF NOT EXISTS traffic_rollups (
+        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+        bucket_seconds INTEGER NOT NULL CHECK(bucket_seconds IN (300, 3600)),
+        bucket_start TEXT NOT NULL,
+        sample_count INTEGER NOT NULL CHECK(sample_count > 0),
+        avg_upload_rate REAL NOT NULL CHECK(avg_upload_rate >= 0),
+        avg_download_rate REAL NOT NULL CHECK(avg_download_rate >= 0),
+        max_upload_rate REAL NOT NULL CHECK(max_upload_rate >= 0),
+        max_download_rate REAL NOT NULL CHECK(max_download_rate >= 0),
+        upload_bytes_delta REAL NOT NULL CHECK(upload_bytes_delta >= 0),
+        download_bytes_delta REAL NOT NULL CHECK(download_bytes_delta >= 0),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(connection_id, bucket_seconds, bucket_start)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS idx_traffic_rollups_range
+        ON traffic_rollups(connection_id, bucket_seconds, bucket_start);
+    `,
+  },
 ];
 
 export class AppDatabase {
