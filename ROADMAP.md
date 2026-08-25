@@ -1,6 +1,6 @@
 # Surge LAN Console — 开发路线图（Roadmap）
 
-> DeepSeek Harness 按 Phase 顺序开发。Phase 11–14 已完成基础实现，Phase 15 正在持续完善 Analytics / Backup / Config History。
+> DeepSeek Harness 按 Phase 顺序开发。Phase 11–15 已完成 Local Core、持久化、通知、后台采集、Analytics、Backup / Restore 与 Config History 基础闭环。
 
 ---
 
@@ -56,11 +56,12 @@ Quiet Hours
 Cooldown
 Fingerprint dedupe
 Recovery notification
+Provider backoff
 ```
 
 首批事件：Device Offline / Recovery、Surge Authentication Error、DNS Failure / High Latency / Recovery、Policy Node Unreachable / Recovery、Event Warning / Error、Profile Reload Success / Failure、Scheduled Job Failure / Recovery、Engine Restart、Unauthorized Ban、Daily Digest。
 
-Bark Token URL 仅加密存入 Vault，Settings 可替换 Token、启停渠道、测试推送、调整事件规则并查看通知历史。
+Bark Token URL 仅加密存入 Vault，Settings 可替换 Token、启停渠道、测试推送、调整事件规则并查看通知历史。Quiet Hours 不会产生“只收到恢复、未收到故障”的状态错配；Provider 连续失败使用指数退避。
 
 ## Phase 14 — Scheduler + Collector（已完成基础实现）
 
@@ -76,11 +77,15 @@ Metrics Collector
 Event Collector + cursor dedupe
 DNS Health Check (/v1/test/dns_delay)
 Node Quality Check + node dedupe
+Runtime Metrics
+Policy Traffic Counters
+Profile Snapshot
 Profile Reload
 Daily Digest
+SQLite Backup
 ```
 
-默认频率：Metrics 60s、Events 30s、DNS 10min、Node Quality 30min、Heartbeat 60s；Profile Reload 与 Daily Digest 默认关闭。频率可在 Settings 调整，并有最小安全间隔。
+默认频率：Metrics 60s、Events 30s、DNS 10min、Node Quality 30min、Runtime Metrics 5min、配置快照 6h、SQLite Backup 24h、Heartbeat 60s；Profile Reload 与 Daily Digest 默认关闭。频率可在 Settings 调整，并有最小安全间隔。
 
 ### Runtime Vault Lease
 
@@ -94,7 +99,7 @@ Daily Digest
 
 ---
 
-## Phase 15 — Analytics + Backup + Config History（进行中）
+## Phase 15 — Analytics + Backup + Config History（已完成）
 
 ### 已完成
 
@@ -106,22 +111,21 @@ Daily Digest
 - [x] **Error Trend**：按连接聚合 Surge Warning / Error 与 Scheduler Failure；Bark Failure 因当前通知历史为全局口径，单独作为 Console 全局指标展示。
 - [x] **Profile Snapshot / SHA-256 / Diff**：只抓取 `sensitive=0` 配置；支持 6h 自动快照、手动快照、Reload 后快照、SHA-256 去重、历史列表与两版本 Diff。
 - [x] **SQLite retention**：高频 Metrics 原始样本 2d、健康/事件原始样本 7d、5min Traffic rollup 30d、1h Traffic rollup 365d、Policy Traffic counter 30d、Job Runs 30d、Notification History 90d。
+- [x] **Retention settings**：上述保留周期已开放为受约束 Settings 配置，Core 强制最小/最大范围；缩短周期后立即清理，恢复默认值同样即时生效。
 - [x] **Daily backup**：使用 Node `node:sqlite` Online Backup API 对活跃 WAL 数据库生成一致快照；默认每日自动备份，支持手动备份，最近保留 30 份。
-- [x] **Backup validation / Restore preflight foundation**：备份先写 `.partial`，执行 `PRAGMA quick_check`、schema migration version 与 SHA-256 校验，全部通过后再原子改名；Settings 可重新验证已有备份。
-
-### 待完成
-
-- [ ] **Restore execution**：在 Restore preflight 通过后提供受控恢复流程；需要停 Scheduler / 关闭 DB、原子替换、重启 Core，并设计失败回滚。当前仅实现“恢复前验证”，尚未开放在线恢复按钮。
-- [ ] **Console update check**：当前版本与仓库最新版本 / commit 比较，并提供更新提示。
-- [ ] **Retention settings**：将当前安全默认保留周期开放为受约束的 Settings 配置。
+- [x] **Backup validation / Restore preflight**：备份先写 `.partial`，执行 `PRAGMA quick_check`、schema migration version 与 SHA-256 校验，全部通过后再原子改名；Settings 可重新验证已有备份。
+- [x] **Restore execution**：恢复前强制重新校验 SHA-256 / quick_check / schema，自动创建 `restore-point`，安全停止 Scheduler / Session / Runtime Vault，关闭 SQLite/WAL 后同文件系统原子替换；失败执行文件级 rollback，完成后由容器自动重启 Core。
+- [x] **Console update check**：Settings 显示当前 Build Info，并由 Core 服务端比较最新版本 / commit；支持私有 GitHub 只读 Token 或 HTTP(S) Update Manifest，远端结果默认缓存 10 分钟，支持手动强制刷新。Token 仅存在于 Core 环境变量，不进入浏览器、SQLite 或响应。
 
 **验收原则：**
 
 - 历史趋势必须来自 SQLite，不依赖页面常驻；
 - 长期统计不能直接无限保存高频原始 JSON，应使用 retention / rollup；
 - 备份必须使用 SQLite Online Backup，不直接复制活跃 `.db/.db-wal/.db-shm`；
-- Restore 执行前必须重新通过数据库完整性与 schema 校验；
-- Secret 永远不进入浏览器持久化、Analytics、Backup metadata 或日志明文。
+- Restore 执行前必须重新通过数据库完整性、schema 与 SHA-256 校验；
+- 恢复失败必须保留可回滚路径，不在 SQLite 打开状态下覆盖数据库；
+- Secret 永远不进入浏览器持久化、Analytics、Backup metadata 或日志明文；
+- GitHub Update Token 只允许通过 Core 环境变量提供，不写入 SQLite / Web Storage / 前端 Bundle。
 
 ---
 
@@ -136,6 +140,6 @@ Daily Digest
 | Connection Vault / Core Proxy | Phase 12 | 已完成 |
 | Notification / Bark | Phase 13 | 已完成基础实现 |
 | Scheduler / Collector | Phase 14 | 已完成基础实现 |
-| V2 Analytics / Backup | Phase 15 | 进行中 |
+| V2 Analytics / Backup | Phase 15 | 已完成 |
 
 > 原则：Secret 只在 Core 内解密；业务模块发布 Event，不直接调用 Bark；后台采集与调度不依赖浏览器常驻。
