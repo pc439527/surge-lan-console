@@ -33,7 +33,7 @@ export function EventsPage() {
   useKeyboardShortcuts({ "/": () => searchRef.current?.focus() });
 
   const eventsQuery = useEventsQuery();
-  const events = eventsQuery.data ?? [];
+  const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
