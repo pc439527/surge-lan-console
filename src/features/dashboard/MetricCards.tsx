@@ -17,9 +17,9 @@ export function MetricCards({ data }: { data: MetricsData }) {
   if (data.loading) {
     return (
       <Card className="overflow-hidden p-0">
-        <div className="dashboard-metric-grid grid grid-cols-2 xl:grid-cols-5">
+        <div className="dashboard-metric-grid">
           {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className={cn("metric-cell p-4 sm:p-5", i > 0 && "xl:border-l xl:border-border/70")}>
+            <div key={i} className="metric-cell p-4 sm:p-5">
               <Skeleton className="h-4 w-16" />
               <Skeleton className="mt-3 h-8 w-24" />
             </div>
@@ -74,16 +74,11 @@ export function MetricCards({ data }: { data: MetricsData }) {
 
   return (
     <Card className="overflow-hidden p-0">
-      <div className="dashboard-metric-grid grid grid-cols-2 xl:grid-cols-5">
-        {items.map((item, index) => (
+      <div className="dashboard-metric-grid">
+        {items.map((item) => (
           <div
             key={item.label}
-            className={cn(
-              "metric-cell relative px-4 py-4 sm:px-5 sm:py-5",
-              index > 0 && "xl:border-l xl:border-border/70",
-              index < 4 && "max-xl:border-b max-xl:border-border/50",
-              index % 2 === 1 && "max-xl:border-l max-xl:border-border/50",
-            )}
+            className="metric-cell relative px-4 py-4 sm:px-5 sm:py-5"
             title={item.hint}
           >
             <div className="flex items-center gap-2">

@@ -139,32 +139,83 @@
   opacity: 0.08;
 }
 
-.sidebar-nav-active {
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+/* Dashboard V5 — responsive to the actual content width, not only the
+   viewport breakpoint. This matters when browser zoom and the 236px sidebar
+   reduce the available main area while Tailwind's xl breakpoint is still on. */
+.dashboard-hero > :first-child {
+  flex-flow: row wrap !important;
+  align-items: center !important;
 }
 
-.sidebar-nav-active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 3px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--accent);
-  transform: translateY(-50%);
+.dashboard-hero > :first-child > :first-child {
+  flex: 1 1 520px;
+}
+
+.dashboard-hero > :first-child > :last-child {
+  flex: 0 1 auto;
+}
+
+.dashboard-metric-grid {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: color-mix(in srgb, var(--border) 78%, transparent);
 }
 
 .metric-cell {
-  min-width: 0;
-  background: transparent;
+  min-width: min(100%, 220px);
+  flex: 1 1 220px;
+  background: var(--surface-panel);
 }
 
-/* Dashboard V3: the status rail should not force a large blank region below
-   the traffic chart. On wide screens its rows become a compact two-column
-   inspector while badges/dividers continue to span the full rail. */
-@media (min-width: 1280px) {
+.dashboard-primary-grid {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: stretch !important;
+  gap: 16px;
+}
+
+.dashboard-primary-grid > :first-child {
+  display: flex;
+  min-width: min(100%, 620px);
+  flex: 2 1 720px;
+  flex-direction: column;
+}
+
+.dashboard-primary-grid > :nth-child(2) {
+  min-width: min(100%, 340px);
+  flex: 1 1 360px;
+  container: statusrail / inline-size;
+}
+
+.dashboard-primary-grid > :first-child > :last-child {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.dashboard-primary-grid > :first-child [aria-label="流量图表"] {
+  height: auto;
+  min-height: 16rem;
+  flex: 1;
+}
+
+.dashboard-secondary-grid {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: stretch !important;
+  gap: 16px;
+}
+
+.dashboard-secondary-grid > * {
+  min-width: min(100%, 420px);
+  flex: 1 1 520px;
+}
+
+/* The status rail decides its own density from its card width. At 150% zoom
+   the card no longer receives a two-column inspector just because the whole
+   viewport still happens to be 1280 CSS px wide. */
+@container statusrail (min-width: 340px) {
   .dashboard-primary-grid > :nth-child(2) > :last-child {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -184,6 +235,23 @@
   .dashboard-primary-grid > :nth-child(2) > :last-child > * {
     min-width: 0;
   }
+}
+
+.sidebar-nav-active {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.sidebar-nav-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translateY(-50%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -239,9 +307,16 @@
 
   .dashboard-primary-grid,
   .dashboard-secondary-grid {
-    grid-template-columns: minmax(0, 1fr) !important;
+    flex-direction: column;
   }
 
-  .dashboard-primary-grid > * { grid-column: auto !important; }
-  .dashboard-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .dashboard-primary-grid > *,
+  .dashboard-secondary-grid > * {
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .dashboard-metric-grid .metric-cell {
+    min-width: min(100%, 220px);
+  }
 }

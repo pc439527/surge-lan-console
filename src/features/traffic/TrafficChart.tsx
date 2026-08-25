@@ -27,11 +27,26 @@ export function TrafficChart({ series }: TrafficChartProps) {
   useThemeSync();
 
   useEffect(() => {
-    if (!ref.current) return;
-    chartRef.current = echarts.init(ref.current);
-    const onResize = () => chartRef.current?.resize();
+    const element = ref.current;
+    if (!element) return;
+
+    chartRef.current = echarts.init(element);
+    let frame = 0;
+    const onResize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => chartRef.current?.resize());
+    };
+
+    // Browser zoom, sidebar changes and responsive wrapping can resize the
+    // chart container without a reliable window resize after async content
+    // settles. Observe the actual element so ECharts always matches it.
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onResize) : null;
+    observer?.observe(element);
     window.addEventListener("resize", onResize);
+
     return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
       window.removeEventListener("resize", onResize);
       chartRef.current?.dispose();
       chartRef.current = null;
