@@ -6,6 +6,7 @@ import { ConnectionService, type ConnectionInput } from "./connection-service.js
 import { EventBus } from "./event-bus.js";
 import { CoreError } from "./errors.js";
 import { NotificationService } from "./notification-service.js";
+import { ProfileHistoryService } from "./profile-history.js";
 import { RuntimeVault } from "./runtime-vault.js";
 import { SchedulerService } from "./scheduler-service.js";
 import { SecretVault } from "./secret-vault.js";
@@ -88,6 +89,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const notifications = new NotificationService(database, secretVault, runtimeVault, events);
   const scheduler = new SchedulerService(database, connections, surge, events, runtimeVault);
   const trafficAnalytics = new TrafficAnalyticsService(database, now);
+  const profileHistory = new ProfileHistoryService(database, now);
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
 
   const server = createServer(async (request, response) => {
@@ -147,6 +149,44 @@ export function createCoreApp(options: CoreAppOptions) {
         connections.get(connectionId);
         const range = trafficRange(url.searchParams.get("range"));
         sendJson(response, 200, { connectionId, range, points: trafficAnalytics.query(connectionId, range) });
+        return;
+      }
+
+      if (method === "GET" && pathname === "/api/profile-history") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "配置历史需要 connectionId。");
+        connections.get(connectionId);
+        sendJson(response, 200, profileHistory.list(connectionId, Number(url.searchParams.get("limit")) || 100));
+        return;
+      }
+      if (method === "POST" && pathname === "/api/profile-history/capture") {
+        const session = requireSession(sessions, sessionToken);
+        const body = await readJson(request);
+        const connectionId = stringField(body, "connectionId").trim();
+        if (!connectionId) throw new CoreError("connection_required", 400, "配置快照需要 connectionId。");
+        const result = await surge.request(connections.getCredentials(connectionId, session.vaultKey), "GET", "/v1/profiles/current?sensitive=0", null, {}, 10_000);
+        if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("profile_snapshot_http_error", 502, `配置读取返回 HTTP ${result.statusCode}。`);
+        sendJson(response, 201, profileHistory.capture(connectionId, result.body, "manual"));
+        return;
+      }
+      if (method === "GET" && pathname === "/api/profile-history/diff") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        const from = url.searchParams.get("from")?.trim() ?? "";
+        const to = url.searchParams.get("to")?.trim() ?? "";
+        if (!connectionId || !from || !to) throw new CoreError("profile_diff_required", 400, "配置 Diff 需要 connectionId、from 与 to。");
+        connections.get(connectionId);
+        sendJson(response, 200, profileHistory.diff(connectionId, from, to));
+        return;
+      }
+      const profileHistoryMatch = pathname.match(/^\/api\/profile-history\/([^/]+)$/);
+      if (method === "GET" && profileHistoryMatch) {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "读取配置快照需要 connectionId。");
+        connections.get(connectionId);
+        sendJson(response, 200, profileHistory.get(connectionId, decodeURIComponent(profileHistoryMatch[1] ?? "")));
         return;
       }
 
