@@ -4,6 +4,7 @@ import type { ConnectionService } from "./connection-service.js";
 import type { EventBus } from "./event-bus.js";
 import { parseSurgeEvents } from "./event-collector.js";
 import { CoreError } from "./errors.js";
+import { parsePolicyNodeHealth } from "./policy-health.js";
 import { RetentionService } from "./retention-service.js";
 import type { RuntimeVault } from "./runtime-vault.js";
 import type { SurgeTransport, SurgeProxyResult } from "./surge-transport.js";
@@ -246,14 +247,37 @@ export class SchedulerService {
   }
 
   private async runNodeHealth(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
-    try {
-      const result = await this.surge.request(credentials, "GET", "/v1/policy_groups/test_results", null, {}, 10_000);
-      if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("policy_health_error", 502, `策略 API 返回 HTTP ${result.statusCode}。`);
-      this.storeSample(connectionId, "node-quality", result.body);
-      this.events.publish({ type: "policy-node-recovery", fingerprint: `policy:${connectionId}`, title: "策略节点状态恢复", body: `${credentials.connection.name} 策略节点检查恢复正常。`, severity: "info", recovery: true, connectionId });
-    } catch (error) {
-      this.events.publish({ type: "policy-node-unreachable", fingerprint: `policy:${connectionId}`, title: "策略节点检查失败", body: `${credentials.connection.name} 无法获取策略节点健康结果。`, severity: "warning", connectionId });
-      throw error;
+    const result = await this.surge.request(credentials, "GET", "/v1/policy_groups/test_results", null, {}, 10_000);
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw new CoreError("policy_health_error", 502, `策略节点测试结果 API 返回 HTTP ${result.statusCode}。`);
+    }
+
+    this.storeSample(connectionId, "node-quality", result.body);
+    const nodes = parsePolicyNodeHealth(result.body);
+    for (const node of nodes) {
+      const fingerprint = `policy-node:${connectionId}:${node.key}`;
+      const memberships = node.groups.length > 0 ? ` · ${node.groups.join(" / ")}` : "";
+      if (node.reachable) {
+        const latency = node.latencyMs === null ? "" : ` · ${Math.round(node.latencyMs)}ms`;
+        this.events.publish({
+          type: "policy-node-recovery",
+          fingerprint,
+          title: "策略节点恢复",
+          body: `${credentials.connection.name} · ${node.name}${latency}${memberships}`,
+          severity: "info",
+          recovery: true,
+          connectionId,
+        });
+      } else {
+        this.events.publish({
+          type: "policy-node-unreachable",
+          fingerprint,
+          title: "策略节点不可达",
+          body: `${credentials.connection.name} · ${node.name}${memberships}`,
+          severity: "warning",
+          connectionId,
+        });
+      }
     }
   }
 
@@ -282,8 +306,6 @@ export class SchedulerService {
     const previousCursor = this.loadEventCursor(connectionId);
     const currentKeys = recent.map((event) => event.key);
 
-    // Bootstrap only establishes the cursor. Do not notify historical warnings
-    // already present when the collector is enabled or the Core is upgraded.
     if (previousCursor === null) {
       this.saveEventCursor(connectionId, currentKeys);
       return;
