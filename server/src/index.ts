@@ -6,6 +6,13 @@ const { server } = createCoreApp({
   databasePath: config.databasePath,
   sessionIdleMs: config.sessionIdleMs,
   sessionAbsoluteMs: config.sessionAbsoluteMs,
+  onRestartRequested: (restoreSucceeded) => {
+    process.exitCode = restoreSucceeded ? 0 : 1;
+    console.log(restoreSucceeded
+      ? "[core] SQLite restore completed; restarting Core"
+      : "[core] SQLite restore failed; restarting Core with previous database");
+    setImmediate(() => process.exit());
+  },
 });
 
 server.listen(config.port, config.host, () => {
