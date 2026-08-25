@@ -40,7 +40,11 @@ services:
       surge-core:
         condition: service_healthy
     ports:
-      - "192.168.50.20:8080:80"
+      # Tailscale serve forwards console.example.ts.net:8080 → 127.0.0.1:8080
+      # (see tailscaled.state "_serve/dbaf"). Bind loopback so external HTTPS
+      # access through Tailscale reaches the console; avoids the LAN-only bind
+      # that left the serve target empty.
+      - "127.0.0.1:8080:80"
     restart: unless-stopped
     security_opt:
       - "no-new-privileges:true"
