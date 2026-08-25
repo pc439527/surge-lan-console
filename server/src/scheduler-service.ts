@@ -11,6 +11,7 @@ import type { EventBus } from "./event-bus.js";
 import { parseSurgeEvents } from "./event-collector.js";
 import { CoreError } from "./errors.js";
 import { parsePolicyNodeHealth } from "./policy-health.js";
+import { parsePolicyTrafficMetrics } from "./policy-traffic.js";
 import { ProfileHistoryService } from "./profile-history.js";
 import { RetentionService } from "./retention-service.js";
 import type { RuntimeVault } from "./runtime-vault.js";
@@ -422,6 +423,15 @@ export class SchedulerService {
       try {
         const result = await this.surge.request(credentials, "GET", "/v1/metrics", null, { accept: "text/plain" }, 5_000);
         if (result.statusCode >= 200 && result.statusCode < 300) {
+          const policies = parsePolicyTrafficMetrics(result.body);
+          if (policies.length > 0) {
+            this.storeSample(
+              connectionId,
+              "policy-traffic",
+              Buffer.from(JSON.stringify({ policies, measuredAt: new Date(sampledAt).toISOString() })),
+              sampledAt,
+            );
+          }
           try {
             const parsed = parseRuntimeMetrics(result.body);
             source = "metrics";
