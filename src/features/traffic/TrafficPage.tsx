@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { MetricStrip } from "@/components/ui/MetricStrip";
@@ -15,6 +16,7 @@ import { useRawTrafficQuery, useTrafficAnalyticsQuery } from "@/features/shared/
 import { usePageVisible } from "@/hooks/use-page-visibility";
 import { formatBytes, formatUptime } from "@/lib/format";
 import { normalizeEpoch } from "@/api/normalize";
+import { coreApi } from "@/lib/core-api";
 
 type Range = "1m" | "5m" | "15m" | "30m";
 type HistoryRange = "24h" | "7d" | "30d";
@@ -66,6 +68,12 @@ export function TrafficPage() {
   const [historyRequested, setHistoryRequested] = useState(false);
   const [samples, setSamples] = useState<TrafficSample[]>([]);
   const history = useTrafficAnalyticsQuery(historyRange, historyRequested);
+  const policyHistory = useQuery({
+    queryKey: ["core", "analytics", "policy-traffic", connectionId, historyRange],
+    queryFn: () => coreApi.getPolicyTrafficAnalytics(connectionId!, historyRange),
+    enabled: historyRequested && !!connectionId,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     setSamples([]);
@@ -180,11 +188,7 @@ export function TrafficPage() {
               <span className="text-xs tabular-nums text-text-tertiary">{interfaceRows.length} 个接口</span>
             </CardHeader>
             <CardContent>
-              <TrafficStatsTable
-                kind="interface"
-                rows={interfaceRows}
-                emptyMessage="当前 Surge 未返回网络接口统计数据"
-              />
+              <TrafficStatsTable kind="interface" rows={interfaceRows} emptyMessage="当前 Surge 未返回网络接口统计数据" />
             </CardContent>
           </Card>
 
@@ -197,11 +201,7 @@ export function TrafficPage() {
               <span className="text-xs tabular-nums text-text-tertiary">{connectorRows.length} 个连接器</span>
             </CardHeader>
             <CardContent>
-              <TrafficStatsTable
-                kind="connector"
-                rows={connectorRows}
-                emptyMessage="当前 Surge 未返回连接器流量统计数据"
-              />
+              <TrafficStatsTable kind="connector" rows={connectorRows} emptyMessage="当前 Surge 未返回连接器流量统计数据" />
             </CardContent>
           </Card>
 
@@ -223,13 +223,7 @@ export function TrafficPage() {
               {windowSamples.length === 0 ? (
                 <div className="flex h-64 items-center justify-center text-sm text-text-tertiary">正在等待实时流量样本…</div>
               ) : (
-                <TrafficChart
-                  series={windowSamples.map((sample) => ({
-                    time: sample.time,
-                    upload: sample.uploadRate,
-                    download: sample.downloadRate,
-                  }))}
-                />
+                <TrafficChart series={windowSamples.map((sample) => ({ time: sample.time, upload: sample.uploadRate, download: sample.downloadRate }))} />
               )}
             </CardContent>
           </Card>
@@ -266,13 +260,7 @@ export function TrafficPage() {
                     <SummaryStat label="峰值上传" value={`${formatBytes(historySummary.maxUpload)}/s`} tone="upload" />
                     <SummaryStat label="峰值下载" value={`${formatBytes(historySummary.maxDownload)}/s`} tone="download" />
                   </div>
-                  <TrafficChart
-                    series={(history.data?.points ?? []).map((point) => ({
-                      time: new Date(point.bucketStart).getTime(),
-                      upload: point.avgUploadRate,
-                      download: point.avgDownloadRate,
-                    }))}
-                  />
+                  <TrafficChart series={(history.data?.points ?? []).map((point) => ({ time: new Date(point.bucketStart).getTime(), upload: point.avgUploadRate, download: point.avgDownloadRate }))} />
                   <p className="mt-3 text-xs text-text-tertiary">
                     {historySummary.samples} 个原始样本 · {historySummary.resolutionSeconds === 300 ? "5 分钟" : "1 小时"}聚合 · 图表展示平均速率，峰值与累计流量使用独立统计字段。
                   </p>
@@ -280,8 +268,78 @@ export function TrafficPage() {
               )}
             </CardContent>
           </Card>
+
+          <Card className="overflow-hidden">
+            <CardHeader className="flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>Policy Traffic</CardTitle>
+                <p className="mt-1 text-xs text-text-tertiary">来自 Surge /v1/metrics 的 per-policy 累计 counter；Core 按 5 分钟样本计算增量，并自动处理引擎重启归零。</p>
+              </div>
+              {historyRequested && <span className="shrink-0 text-xs text-text-tertiary">{historyRange === "24h" ? "24 小时" : historyRange === "7d" ? "7 天" : "30 天"}</span>}
+            </CardHeader>
+            <CardContent>
+              {!historyRequested ? (
+                <div className="rounded-[14px] border border-dashed border-border px-4 py-7 text-center">
+                  <p className="text-sm text-text-secondary">加载上方历史趋势后，同时读取策略流量。</p>
+                  <p className="mt-1 text-xs text-text-tertiary">支持 24 小时 / 7 天 / 30 天，与历史总流量共用时间范围。</p>
+                </div>
+              ) : !connectionId ? (
+                <DataEmpty title="Policy Traffic 不适用于当前模式" description="需要已保存的 Core 连接才能读取历史策略流量。" compact />
+              ) : policyHistory.isLoading ? (
+                <Skeleton className="h-64 w-full" />
+              ) : policyHistory.isError ? (
+                <ErrorStateView error={policyHistory.error} api="/api/analytics/policy-traffic" compact onRetry={() => policyHistory.refetch()} />
+              ) : (policyHistory.data?.policies.length ?? 0) === 0 ? (
+                <DataEmpty title="暂无 Policy Traffic" description="需要支持 /v1/metrics 的 Surge 版本，并至少形成两个 5 分钟 counter 样本后才能计算增量。" compact />
+              ) : (
+                <PolicyTrafficTable policies={policyHistory.data?.policies ?? []} />
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
+    </div>
+  );
+}
+
+function PolicyTrafficTable({ policies }: { policies: NonNullable<Awaited<ReturnType<typeof coreApi.getPolicyTrafficAnalytics>>["policies"]> }) {
+  const grandTotal = policies.reduce((sum, policy) => sum + policy.totalBytes, 0);
+  const max = Math.max(1, ...policies.map((policy) => policy.totalBytes));
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[720px] border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-xs text-text-tertiary">
+            <th className="w-14 px-3 py-2.5 font-medium">#</th>
+            <th className="px-3 py-2.5 font-medium">策略</th>
+            <th className="px-3 py-2.5 text-right font-medium">下载</th>
+            <th className="px-3 py-2.5 text-right font-medium">上传</th>
+            <th className="px-3 py-2.5 text-right font-medium">总量</th>
+            <th className="w-56 px-3 py-2.5 font-medium">占比</th>
+          </tr>
+        </thead>
+        <tbody>
+          {policies.slice(0, 50).map((policy, index) => {
+            const share = grandTotal > 0 ? policy.totalBytes / grandTotal * 100 : 0;
+            return (
+              <tr key={policy.name} className="border-b border-border/45 text-[13px] last:border-b-0 hover:bg-elevated/35">
+                <td className="px-3 py-3 font-mono text-xs text-text-tertiary">#{index + 1}</td>
+                <td className="max-w-[280px] px-3 py-3 font-medium text-text-primary"><span className="block truncate" title={policy.name}>{policy.name}</span></td>
+                <td className="px-3 py-3 text-right font-mono text-xs tabular-nums text-text-secondary">{formatBytes(policy.downloadBytes)}</td>
+                <td className="px-3 py-3 text-right font-mono text-xs tabular-nums text-text-secondary">{formatBytes(policy.uploadBytes)}</td>
+                <td className="px-3 py-3 text-right font-mono text-xs font-semibold tabular-nums text-text-primary">{formatBytes(policy.totalBytes)}</td>
+                <td className="px-3 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-pill bg-border/50"><div className="h-full rounded-pill bg-accent" style={{ width: `${Math.max(1, policy.totalBytes / max * 100)}%` }} /></div>
+                    <span className="w-12 text-right font-mono text-[10px] tabular-nums text-text-tertiary">{share.toFixed(1)}%</span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="mt-3 text-xs text-text-tertiary">{policies.length} 个策略 · 区间总流量 {formatBytes(grandTotal)} · counter reset 已按新值重新累计。</p>
     </div>
   );
 }
