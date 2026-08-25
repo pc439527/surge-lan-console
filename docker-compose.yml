@@ -3,6 +3,10 @@
 #   → http://<host>:8080
 # Optional exact build identity:
 #   GIT_COMMIT=$(git rev-parse --short HEAD) GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD) docker compose up -d --build
+# Optional update source for private GitHub repositories:
+#   SLC_UPDATE_GITHUB_REPO=owner/repo
+#   SLC_UPDATE_GITHUB_TOKEN=<read-only token>
+# Or set SLC_UPDATE_MANIFEST_URL to a trusted HTTP(S) JSON manifest.
 services:
   surge-core:
     build:
@@ -10,6 +14,12 @@ services:
       dockerfile: server/Dockerfile
     image: surge-lan-console-core:${APP_VERSION:-0.5.0}
     container_name: surge-core
+    environment:
+      SLC_UPDATE_MANIFEST_URL: ${SLC_UPDATE_MANIFEST_URL:-}
+      SLC_UPDATE_GITHUB_REPO: ${SLC_UPDATE_GITHUB_REPO:-}
+      SLC_UPDATE_GITHUB_TOKEN: ${SLC_UPDATE_GITHUB_TOKEN:-}
+      SLC_UPDATE_BRANCH: ${SLC_UPDATE_BRANCH:-main}
+      SLC_UPDATE_CACHE_MINUTES: ${SLC_UPDATE_CACHE_MINUTES:-10}
     volumes:
       - surge-console-data:/data
     restart: unless-stopped
