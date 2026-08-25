@@ -11,8 +11,9 @@ const ruleSchema = z.object({ id: z.string(), channelId: z.string(), eventType: 
 const historySchema = z.object({ id: z.string(), channelId: z.string().nullable(), eventType: z.string(), fingerprint: z.string(), title: z.string(), body: z.string(), status: z.enum(["sent", "error", "suppressed"]), errorMessage: z.string().nullable(), createdAt: z.string() });
 const jobSchema = z.object({ id: z.string(), type: z.string(), connectionId: z.string().nullable(), enabled: z.boolean(), intervalSeconds: z.number(), nextRunAt: z.string(), lastRunAt: z.string().nullable() });
 const runSchema = z.object({ id: z.string(), jobId: z.string(), status: z.enum(["success", "error", "skipped"]), startedAt: z.string(), finishedAt: z.string(), durationMs: z.number(), message: z.string().nullable() });
-const backupInfoSchema = z.object({ id: z.string(), source: z.enum(["scheduled", "manual"]), createdAt: z.string(), sizeBytes: z.number() });
+const backupInfoSchema = z.object({ id: z.string(), source: z.enum(["scheduled", "manual", "restore-point"]), createdAt: z.string(), sizeBytes: z.number() });
 const backupValidationSchema = backupInfoSchema.extend({ valid: z.boolean(), quickCheck: z.string(), schemaVersion: z.number().nullable(), sha256: z.string().length(64) });
+const restorePreparationSchema = z.object({ backup: backupValidationSchema, safetyBackup: backupValidationSchema, restartRequired: z.literal(true) });
 const trafficRangeSchema = z.enum(["24h", "7d", "30d"]);
 const trafficRollupPointSchema = z.object({
   bucketSeconds: z.number(), bucketStart: z.string(), sampleCount: z.number(), avgUploadRate: z.number(), avgDownloadRate: z.number(),
@@ -62,6 +63,7 @@ export type ScheduledJob = z.infer<typeof jobSchema>;
 export type JobRun = z.infer<typeof runSchema>;
 export type BackupInfo = z.infer<typeof backupInfoSchema>;
 export type BackupValidation = z.infer<typeof backupValidationSchema>;
+export type RestorePreparation = z.infer<typeof restorePreparationSchema>;
 export type TrafficAnalyticsRange = z.infer<typeof trafficRangeSchema>;
 export type TrafficRollupPoint = z.infer<typeof trafficRollupPointSchema>;
 export type TrafficAnalytics = z.infer<typeof trafficAnalyticsSchema>;
@@ -110,7 +112,7 @@ export const coreApi = {
   listNotificationChannels: (): Promise<NotificationChannel[]> => request(() => client.get("/notifications/channels"), z.array(channelSchema)),
   createNotificationChannel: (input: { name: string; endpoint: string; enabled?: boolean }): Promise<NotificationChannel> => request(() => client.post("/notifications/channels", input), channelSchema),
   updateNotificationChannel: (id: string, input: { name?: string; endpoint?: string; enabled?: boolean }): Promise<NotificationChannel> => request(() => client.patch(`/notifications/channels/${encodeURIComponent(id)}`, input), channelSchema),
-  deleteNotificationChannel: (id: string): Promise<{ deleted: boolean }> => request(() => client.delete(`/notifications/channels/${encodeURIComponent(id)}`), z.object({ deleted: z.boolean() })),
+  deleteNotificationChannel: (id: string): Promise<{ deleted: boolean }> => request(() => client.delete(`/notifications/channels/${encodeURIComponent(id)}`, z.object({ deleted: z.boolean() }))),
   testNotificationChannel: (id: string): Promise<{ sent: boolean }> => request(() => client.post(`/notifications/channels/${encodeURIComponent(id)}/test`), z.object({ sent: z.boolean() })),
   listNotificationRules: (channelId?: string): Promise<NotificationRule[]> => request(() => client.get("/notifications/rules", { params: channelId ? { channelId } : undefined }), z.array(ruleSchema)),
   updateNotificationRule: (id: string, input: { enabled?: boolean; cooldownSeconds?: number; quietStart?: string | null; quietEnd?: string | null; timeZone?: string }): Promise<NotificationRule> => request(() => client.patch(`/notifications/rules/${encodeURIComponent(id)}`, input), ruleSchema),
@@ -124,6 +126,10 @@ export const coreApi = {
   listBackups: (): Promise<BackupInfo[]> => request(() => client.get("/backups"), z.array(backupInfoSchema)),
   createBackup: (): Promise<BackupValidation> => request(() => client.post("/backups", undefined, { timeout: 60_000 }), backupValidationSchema),
   validateBackup: (id: string): Promise<BackupValidation> => request(() => client.post("/backups/validate", { id }, { timeout: 60_000 }), backupValidationSchema),
+  restoreBackup: (id: string, expectedSha256: string): Promise<RestorePreparation> => request(
+    () => client.post("/backups/restore", { id, expectedSha256 }, { timeout: 60_000 }),
+    restorePreparationSchema,
+  ),
 
   getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> => request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
   getPolicyTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<PolicyTrafficAnalytics> => request(() => client.get("/analytics/policy-traffic", { params: { connectionId, range } }), policyTrafficAnalyticsSchema),
