@@ -20,6 +20,18 @@ const retentionSettingsSchema = z.object({
   jobRunsDays: z.number().int(),
   notificationHistoryDays: z.number().int(),
 });
+const buildIdentitySchema = z.object({ version: z.string(), commit: z.string(), branch: z.string() });
+const remoteBuildIdentitySchema = z.object({
+  version: z.string().nullable(), commit: z.string().nullable(), branch: z.string(), publishedAt: z.string().nullable(), url: z.string().nullable(),
+});
+const updateCheckSchema = z.object({
+  status: z.enum(["unconfigured", "current", "update-available", "unknown", "error"]),
+  source: z.enum(["github", "manifest"]).nullable(),
+  current: buildIdentitySchema,
+  latest: remoteBuildIdentitySchema.nullable(),
+  checkedAt: z.string().nullable(),
+  message: z.string(),
+});
 const backupInfoSchema = z.object({ id: z.string(), source: z.enum(["scheduled", "manual", "restore-point"]), createdAt: z.string(), sizeBytes: z.number() });
 const backupValidationSchema = backupInfoSchema.extend({ valid: z.boolean(), quickCheck: z.string(), schemaVersion: z.number().nullable(), sha256: z.string().length(64) });
 const restorePreparationSchema = z.object({ backup: backupValidationSchema, safetyBackup: backupValidationSchema, restartRequired: z.literal(true) });
@@ -71,6 +83,8 @@ export type NotificationHistory = z.infer<typeof historySchema>;
 export type ScheduledJob = z.infer<typeof jobSchema>;
 export type JobRun = z.infer<typeof runSchema>;
 export type RetentionSettings = z.infer<typeof retentionSettingsSchema>;
+export type BuildIdentity = z.infer<typeof buildIdentitySchema>;
+export type UpdateCheck = z.infer<typeof updateCheckSchema>;
 export type BackupInfo = z.infer<typeof backupInfoSchema>;
 export type BackupValidation = z.infer<typeof backupValidationSchema>;
 export type RestorePreparation = z.infer<typeof restorePreparationSchema>;
@@ -112,6 +126,10 @@ export const coreApi = {
   setup: (password: string, confirmPassword: string): Promise<CoreAuthState> => request(() => client.post("/auth/setup", { password, confirmPassword }), authStateSchema),
   unlock: (password: string): Promise<CoreAuthState> => request(() => client.post("/auth/unlock", { password }), authStateSchema),
   lock: (): Promise<CoreAuthState> => request(() => client.post("/auth/lock"), authStateSchema),
+  checkForUpdates: (current: BuildIdentity, refresh = false): Promise<UpdateCheck> => request(
+    () => client.get("/update-check", { params: { version: current.version, commit: current.commit, branch: current.branch, ...(refresh ? { refresh: 1 } : {}) } }),
+    updateCheckSchema,
+  ),
   listConnections: (): Promise<CoreConnection[]> => request(() => client.get("/connections"), z.array(connectionSchema)),
   createConnection: (input: CoreConnectionInput): Promise<CoreConnection> => request(() => client.post("/connections", input), connectionSchema),
   updateConnection: (id: string, input: Partial<CoreConnectionInput>): Promise<CoreConnection> => request(() => client.patch(`/connections/${encodeURIComponent(id)}`, input), connectionSchema),
