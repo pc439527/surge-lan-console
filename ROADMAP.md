@@ -1,6 +1,6 @@
 # Surge LAN Console — 开发路线图（Roadmap）
 
-> DeepSeek Harness 按 Phase 顺序开发。Phase 11–14 已完成基础实现，后续迭代从 Phase 15 开始。
+> DeepSeek Harness 按 Phase 顺序开发。Phase 11–14 已完成基础实现，Phase 15 正在持续完善 Analytics / Backup / Config History。
 
 ---
 
@@ -70,11 +70,12 @@ Bark Token URL 仅加密存入 Vault，Settings 可替换 Token、启停渠道�
 scheduled_jobs
 job_runs
 collector_samples
+collector_state
 Device Heartbeat
 Metrics Collector
-Event Collector
-DNS Health Check
-Node Quality Check
+Event Collector + cursor dedupe
+DNS Health Check (/v1/test/dns_delay)
+Node Quality Check + node dedupe
 Profile Reload
 Daily Digest
 ```
@@ -93,25 +94,34 @@ Daily Digest
 
 ---
 
-## Phase 15 — Analytics + Backup + Config History（当前）
+## Phase 15 — Analytics + Backup + Config History（进行中）
 
-**下一阶段内容：**
+### 已完成
 
-```text
-24h / 7d / 30d Traffic
-Policy Traffic
-DNS Trend
-Memory / Uptime
-Error Trend
-Policy P50 / P95 / Availability
-Profile Snapshot / SHA-256 / Diff
-SQLite retention
-Daily backup
-Restore validation
-Console update check
-```
+- [x] **24h / 7d / 30d Traffic**：Metrics Collector 写入 SQLite 5 分钟 / 1 小时 rollup；Traffic 页面按需读取长期趋势，不依赖浏览器常驻。
+- [x] **DNS Trend**：基于后台 `/v1/test/dns_delay` 采样提供 24h / 7d 趋势、平均、P95、峰值与采样数；不再把 Core→Surge API RTT 当成 DNS 延迟。
+- [x] **Policy P50 / P95 / Availability**：Node Quality Collector 的真实节点结果跨策略组去重后计算 24h / 7d P50、P95、可用率与最近状态。
+- [x] **Profile Snapshot / SHA-256 / Diff**：只抓取 `sensitive=0` 配置；支持 6h 自动快照、手动快照、Reload 后快照、SHA-256 去重、历史列表与两版本 Diff。
+- [x] **SQLite retention**：高频 Metrics 原始样本 2d、健康/事件原始样本 7d、5min Traffic rollup 30d、1h Traffic rollup 365d、Job Runs 30d、Notification History 90d。
+- [x] **Daily backup**：使用 Node `node:sqlite` Online Backup API 对活跃 WAL 数据库生成一致快照；默认每日自动备份，支持手动备份，最近保留 30 份。
+- [x] **Backup validation / Restore preflight foundation**：备份先写 `.partial`，执行 `PRAGMA quick_check`、schema migration version 与 SHA-256 校验，全部通过后再原子改名；Settings 可重新验证已有备份。
 
-**验收目标：** 历史趋势来自 SQLite，不依赖页面常驻；数据保留策略可配置；备份使用 SQLite 安全快照而不是直接复制活跃 WAL；恢复前验证数据库完整性。
+### 待完成
+
+- [ ] **Policy Traffic**：策略 / 节点维度流量归因与历史趋势。
+- [ ] **Memory / Uptime**：Core / Surge 运行时指标历史化与趋势。
+- [ ] **Error Trend**：Surge Event、Scheduler failure、通知失败等错误事件按时间聚合。
+- [ ] **Restore execution**：在 Restore preflight 通过后提供受控恢复流程；需要停 Scheduler / 关闭 DB、原子替换、重启 Core，并设计失败回滚。当前仅实现“恢复前验证”，尚未开放在线恢复按钮。
+- [ ] **Console update check**：当前版本与仓库最新版本 / commit 比较，并提供更新提示。
+- [ ] **Retention settings**：将当前安全默认保留周期开放为受约束的 Settings 配置。
+
+**验收原则：**
+
+- 历史趋势必须来自 SQLite，不依赖页面常驻；
+- 长期统计不能直接无限保存高频原始 JSON，应使用 retention / rollup；
+- 备份必须使用 SQLite Online Backup，不直接复制活跃 `.db/.db-wal/.db-shm`；
+- Restore 执行前必须重新通过数据库完整性与 schema 校验；
+- Secret 永远不进入浏览器持久化、Analytics、Backup metadata 或日志明文。
 
 ---
 
@@ -126,6 +136,6 @@ Console update check
 | Connection Vault / Core Proxy | Phase 12 | 已完成 |
 | Notification / Bark | Phase 13 | 已完成基础实现 |
 | Scheduler / Collector | Phase 14 | 已完成基础实现 |
-| V2 Analytics / Backup | Phase 15 | 下一阶段 |
+| V2 Analytics / Backup | Phase 15 | 进行中 |
 
 > 原则：Secret 只在 Core 内解密；业务模块发布 Event，不直接调用 Bark；后台采集与调度不依赖浏览器常驻。
