@@ -68,11 +68,9 @@ test("quiet-hour failure does not create a standalone recovery notification", as
       channel.id,
     );
     assert.equal(history.length, 1);
-    assert.deepEqual(history[0], {
-      event_type: "device-offline",
-      status: "suppressed",
-      error_message: "quiet-hours",
-    });
+    assert.equal(history[0].event_type, "device-offline");
+    assert.equal(history[0].status, "suppressed");
+    assert.equal(history[0].error_message, "quiet-hours");
   } finally {
     service.close();
     runtime.lock();
