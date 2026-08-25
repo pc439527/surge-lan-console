@@ -6,6 +6,7 @@ import { AuthError, AuthService } from "./auth-service.js";
 import { ConnectionService, type ConnectionInput } from "./connection-service.js";
 import { EventBus } from "./event-bus.js";
 import { CoreError } from "./errors.js";
+import { HealthAnalyticsService, type HealthRange } from "./health-analytics.js";
 import { NotificationService } from "./notification-service.js";
 import { ProfileHistoryService } from "./profile-history.js";
 import { RuntimeVault } from "./runtime-vault.js";
@@ -83,6 +84,11 @@ function trafficRange(value: string | null): TrafficRange {
   if (value === "7d" || value === "30d") return value;
   throw new CoreError("invalid_analytics_range", 400, "Traffic Analytics range 仅支持 24h、7d 或 30d。");
 }
+function healthRange(value: string | null): HealthRange {
+  if (value === null || value === "24h") return "24h";
+  if (value === "7d") return value;
+  throw new CoreError("invalid_health_range", 400, "Health Analytics range 仅支持 24h 或 7d。");
+}
 
 export function createCoreApp(options: CoreAppOptions) {
   const now = options.now ?? (() => Date.now()); const database = new AppDatabase(options.databasePath);
@@ -91,6 +97,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const notifications = new NotificationService(database, secretVault, runtimeVault, events);
   const scheduler = new SchedulerService(database, connections, surge, events, runtimeVault);
   const trafficAnalytics = new TrafficAnalyticsService(database, now);
+  const healthAnalytics = new HealthAnalyticsService(database, now);
   const profileHistory = new ProfileHistoryService(database, now);
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
@@ -163,6 +170,24 @@ export function createCoreApp(options: CoreAppOptions) {
         connections.get(connectionId);
         const range = trafficRange(url.searchParams.get("range"));
         sendJson(response, 200, { connectionId, range, points: trafficAnalytics.query(connectionId, range) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/analytics/dns") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "DNS Analytics 需要 connectionId。");
+        connections.get(connectionId);
+        const range = healthRange(url.searchParams.get("range"));
+        sendJson(response, 200, { connectionId, range, points: healthAnalytics.queryDns(connectionId, range) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/analytics/policy-health") {
+        requireSession(sessions, sessionToken);
+        const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
+        if (!connectionId) throw new CoreError("connection_required", 400, "Policy Health Analytics 需要 connectionId。");
+        connections.get(connectionId);
+        const range = healthRange(url.searchParams.get("range"));
+        sendJson(response, 200, { connectionId, range, nodes: healthAnalytics.queryPolicy(connectionId, range) });
         return;
       }
 
