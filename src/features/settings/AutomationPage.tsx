@@ -16,6 +16,7 @@ import {
   type ScheduledJob,
 } from "@/lib/core-api";
 import { useConnectionStore } from "@/stores/connection-store";
+import { RetentionCard } from "./RetentionCard";
 
 const JOBS_KEY = ["core", "automation", "jobs"] as const;
 const RUNS_KEY = ["core", "automation", "runs"] as const;
@@ -74,6 +75,7 @@ export function AutomationPage() {
         </Card>
         <aside className="space-y-5 xl:sticky xl:top-20">
           <BackupCard backups={backups.data ?? []} loading={backups.isLoading} onChanged={refresh} />
+          <RetentionCard />
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-text-secondary" /><CardTitle>最近运行</CardTitle></div>
