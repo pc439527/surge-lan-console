@@ -23,16 +23,23 @@ export class RetentionService {
     const isoBefore = (ageMs: number) => new Date(now - ageMs).toISOString();
 
     this.database.transaction(() => {
-      // High-frequency traffic samples are intentionally short-lived. Long-term
-      // analytics come from traffic_rollups instead of retaining raw JSON.
+      // High-frequency raw /v1/traffic payloads are intentionally short-lived.
+      // Long-term total traffic analytics come from traffic_rollups.
       this.database.execute(
         "DELETE FROM collector_samples WHERE kind = 'metrics' AND sampled_at < ?",
         isoBefore(2 * DAY_MS),
       );
 
-      // Lower-frequency health/event samples stay longer for diagnostics.
+      // Per-policy Prometheus counters are sampled only every five minutes and
+      // need a 30-day raw window so counter deltas can be reconstructed safely.
       this.database.execute(
-        "DELETE FROM collector_samples WHERE kind != 'metrics' AND sampled_at < ?",
+        "DELETE FROM collector_samples WHERE kind = 'policy-traffic' AND sampled_at < ?",
+        isoBefore(30 * DAY_MS),
+      );
+
+      // Lower-frequency health/event/runtime samples stay one week for diagnostics.
+      this.database.execute(
+        "DELETE FROM collector_samples WHERE kind NOT IN ('metrics', 'policy-traffic') AND sampled_at < ?",
         isoBefore(7 * DAY_MS),
       );
 
