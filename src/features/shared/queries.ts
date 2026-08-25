@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSurgeClientState } from "@/app/surge-client-context";
 import { summarizeTraffic, SurgeClient } from "@/api/surge-client";
+import { coreApi, type TrafficAnalytics, type TrafficAnalyticsRange } from "@/lib/core-api";
 import { surgeKeys } from "@/lib/surge-keys";
 import type { EventLevel, FeatureState, RequestItem, Traffic, TrafficSummary } from "@/api/types";
 import { usePageVisible } from "@/hooks/use-page-visibility";
@@ -73,6 +74,21 @@ export function useTrafficQuery() {
     select: (data) => summarizeTraffic(data),
     enabled,
     refetchInterval: interval,
+  });
+}
+
+/** SQLite-backed long-term traffic rollups. Disabled until the Traffic page
+ * explicitly asks for history so ordinary realtime viewing does not add Core
+ * API/database reads. */
+export function useTrafficAnalyticsQuery(range: TrafficAnalyticsRange, requested: boolean) {
+  const { client, enabled, connectionId } = useEnabledClient();
+  return useQuery<TrafficAnalytics>({
+    queryKey: ["core", "traffic-analytics", connectionId, range],
+    queryFn: () => coreApi.getTrafficAnalytics(connectionId!, range),
+    enabled: requested && enabled && Boolean(connectionId) && Boolean(client),
+    staleTime: 60_000,
+    refetchInterval: false,
+    retry: false,
   });
 }
 
