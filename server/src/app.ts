@@ -11,6 +11,7 @@ import { HealthAnalyticsService, type HealthRange } from "./health-analytics.js"
 import { NotificationService } from "./notification-service.js";
 import { PolicyTrafficAnalyticsService } from "./policy-traffic-analytics.js";
 import { ProfileHistoryService } from "./profile-history.js";
+import { RetentionService } from "./retention-service.js";
 import { RuntimeAnalyticsService } from "./runtime-analytics.js";
 import { RuntimeVault } from "./runtime-vault.js";
 import { SchedulerService } from "./scheduler-service.js";
@@ -111,6 +112,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const errorAnalytics = new ErrorAnalyticsService(database, now);
   const runtimeAnalytics = new RuntimeAnalyticsService(database, now);
   const profileHistory = new ProfileHistoryService(database, now);
+  const retention = new RetentionService(database, now);
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
   let runtimeClosed = false;
@@ -174,6 +176,23 @@ export function createCoreApp(options: CoreAppOptions) {
       const jobRunMatch = pathname.match(/^\/api\/automation\/jobs\/([^/]+)\/run$/);
       if (method === "POST" && jobRunMatch) { requireSession(sessions, sessionToken); sendJson(response, 200, await scheduler.runNow(decodeURIComponent(jobRunMatch[1] ?? ""))); return; }
       if (method === "GET" && pathname === "/api/automation/runs") { requireSession(sessions, sessionToken); sendJson(response, 200, scheduler.listRuns(Number(url.searchParams.get("limit")) || 100)); return; }
+
+      if (method === "GET" && pathname === "/api/settings/retention") { requireSession(sessions, sessionToken); sendJson(response, 200, retention.getSettings()); return; }
+      if (method === "PATCH" && pathname === "/api/settings/retention") {
+        requireSession(sessions, sessionToken);
+        const body = await readJson(request);
+        const settings = retention.updateSettings(body);
+        retention.runNow(now());
+        sendJson(response, 200, settings);
+        return;
+      }
+      if (method === "DELETE" && pathname === "/api/settings/retention") {
+        requireSession(sessions, sessionToken);
+        const settings = retention.resetSettings();
+        retention.runNow(now());
+        sendJson(response, 200, settings);
+        return;
+      }
 
       if (method === "GET" && pathname === "/api/backups") { requireSession(sessions, sessionToken); sendJson(response, 200, requireBackups(backups).list()); return; }
       if (method === "POST" && pathname === "/api/backups") { requireSession(sessions, sessionToken); sendJson(response, 201, await requireBackups(backups).create("manual")); return; }
