@@ -1,14 +1,12 @@
 # syntax=docker/dockerfile:1
-# ── Build identity (OPTIMIZATION_PLAN §84–85) ─────────────────
-#   docker build \
-#     --build-arg APP_VERSION=0.2.1 \
-#     --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
-#     --build-arg BUILD_TIME=$(date -Iseconds) \
-#     -t surge-lan-console:$(git rev-parse --short HEAD) .
-ARG APP_VERSION=0.2.1
+# Build identity:
+#   - UI version comes from package.json (vite.config.ts)
+#   - build time is generated at build time
+#   - GIT_COMMIT / GIT_BRANCH are optional build args; when omitted the UI
+#     reports "unknown" instead of a stale hard-coded revision.
+ARG APP_VERSION=local
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
-ARG BUILD_TIME=unknown
 
 # ── Stage 1: build ──────────────────────────────────────────────
 FROM node:22-alpine AS build
@@ -20,16 +18,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-ARG APP_VERSION
 ARG GIT_COMMIT
 ARG GIT_BRANCH
-ARG BUILD_TIME
-ENV VITE_APP_VERSION=${APP_VERSION} \
-    VITE_GIT_COMMIT=${GIT_COMMIT} \
-    VITE_GIT_BRANCH=${GIT_BRANCH} \
-    VITE_BUILD_TIME=${BUILD_TIME} \
-    VITE_APP_ENV=production
-RUN pnpm build
+RUN if [ -n "$GIT_COMMIT" ] && [ "$GIT_COMMIT" != "unknown" ]; then export VITE_GIT_COMMIT="$GIT_COMMIT"; fi; \
+    if [ -n "$GIT_BRANCH" ] && [ "$GIT_BRANCH" != "unknown" ]; then export VITE_GIT_BRANCH="$GIT_BRANCH"; fi; \
+    export VITE_APP_ENV=production; \
+    pnpm build
 
 # ── Stage 2: serve ──────────────────────────────────────────────
 FROM nginx:1.27-alpine AS serve
