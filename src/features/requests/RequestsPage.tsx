@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ErrorStateView } from "@/components/data-state";
 import {
   Drawer,
   DrawerBody,
@@ -318,10 +319,7 @@ export function RequestsPage() {
           </div>
 
           {requestsQuery.isError ? (
-            <div className="rounded-[14px] border border-danger/30 bg-danger/5 p-6 text-center">
-              <p className="text-sm font-medium text-danger">请求记录加载失败</p>
-              <Button className="mt-3" size="sm" variant="secondary" onClick={() => requestsQuery.refetch()}>重试</Button>
-            </div>
+            <ErrorStateView error={requestsQuery.error} api="/v1/requests/recent" compact onRetry={() => requestsQuery.refetch()} />
           ) : requestsQuery.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-9 w-full" />
@@ -329,13 +327,13 @@ export function RequestsPage() {
               <Skeleton className="h-9 w-full" />
             </div>
           ) : (
-            <div className="hidden overflow-x-auto md:block">
+            <div className="requests-table-view hidden overflow-x-auto md:block">
               <table className="w-full border-collapse">
                 <thead>
                   {table.getHeaderGroups().map((hg) => (
                     <tr key={hg.id} className="border-b border-border">
                       {hg.headers.map((header) => (
-                        <th key={header.id} className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">
+                        <th key={header.id} scope="col" className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">
                           {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
                       ))}
@@ -346,8 +344,16 @@ export function RequestsPage() {
                   {table.getRowModel().rows.map((row) => (
                     <tr
                       key={row.id}
-                      className="cursor-pointer border-b border-border/50 transition-colors duration-hover last:border-b-0 hover:bg-elevated/60"
+                      tabIndex={0}
+                      aria-label={`查看请求 ${requestHostLabel(row.original)}`}
+                      className="cursor-pointer border-b border-border/50 transition-colors duration-hover last:border-b-0 hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/55"
                       onClick={() => setSelected(row.original)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelected(row.original);
+                        }
+                      }}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id} className="px-3 py-2.5 align-middle">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
@@ -363,7 +369,7 @@ export function RequestsPage() {
           )}
 
           {!requestsQuery.isLoading && !requestsQuery.isError && (
-            <div className="space-y-2 md:hidden">
+            <div className="requests-card-view space-y-2 md:hidden">
               {filtered.slice(0, 50).map((req) => (
                 <button
                   key={req.id}
