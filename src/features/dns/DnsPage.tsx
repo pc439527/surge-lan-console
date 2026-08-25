@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/Dialog";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
+import { coreApi, type DnsTrendPoint, type HealthAnalyticsRange } from "@/lib/core-api";
 import { NoClientNotice } from "@/features/shared/NoClientNotice";
 import { DataEmpty, ErrorStateView } from "@/components/data-state";
 import { normalizeDns, type NormalizedDns } from "@/api/normalize";
@@ -36,12 +37,20 @@ export function DnsPage() {
   const [testedDomain, setTestedDomain] = useState("");
   const [tab, setTab] = useState<Tab>("dynamic");
   const [search, setSearch] = useState("");
+  const [historyRange, setHistoryRange] = useState<HealthAnalyticsRange>("24h");
 
   const dnsQuery = useQuery<NormalizedDns>({
     queryKey: surgeKeys.dns(connectionId),
     queryFn: async () => normalizeDns(await surgeClient!.getDnsCache()),
     enabled: !!surgeClient,
     refetchInterval: 30_000,
+  });
+
+  const dnsHistory = useQuery({
+    queryKey: ["core", "analytics", "dns", connectionId, historyRange],
+    queryFn: () => coreApi.getDnsAnalytics(connectionId!, historyRange),
+    enabled: !!client && !!connectionId,
+    staleTime: 60_000,
   });
 
   const flush = useMutation({
@@ -92,7 +101,7 @@ export function DnsPage() {
     <div className="space-y-5 lg:space-y-6">
       <PageHeader
         title="DNS"
-        description="查看动态缓存、本地记录和解析链路，并对指定域名执行实时诊断。"
+        description="查看动态缓存、本地记录和解析链路，并结合后台采样分析 DNS 延迟趋势。"
         actions={(
           <>
             <Button variant="secondary" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: surgeKeys.dns(connectionId) })}>
@@ -114,6 +123,15 @@ export function DnsPage() {
           { label: "DNS 服务器", value: serverCount, detail: "当前可见来源", tone: serverCount > 0 ? "success" : "muted" },
           { label: "最近测试", value: latestTest, detail: testedDomain || "尚未执行", tone: dnsTest.data !== undefined ? "success" : "muted" },
         ]}
+      />
+
+      <DnsTrendCard
+        points={dnsHistory.data?.points ?? []}
+        loading={dnsHistory.isLoading}
+        error={dnsHistory.isError ? dnsHistory.error : null}
+        range={historyRange}
+        onRangeChange={setHistoryRange}
+        onRetry={() => dnsHistory.refetch()}
       />
 
       <div className="grid items-start gap-4 min-[1360px]:grid-cols-[minmax(0,1fr)_360px]">
@@ -287,6 +305,111 @@ export function DnsPage() {
   );
 }
 
+function DnsTrendCard({
+  points,
+  loading,
+  error,
+  range,
+  onRangeChange,
+  onRetry,
+}: {
+  points: DnsTrendPoint[];
+  loading: boolean;
+  error: unknown;
+  range: HealthAnalyticsRange;
+  onRangeChange: (range: HealthAnalyticsRange) => void;
+  onRetry: () => void;
+}) {
+  const values = points.map((point) => point.delayMs);
+  const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const p95 = percentile(values, 0.95);
+  const peak = values.length ? Math.max(...values) : null;
+  const latest = points.at(-1);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle>DNS 延迟趋势</CardTitle>
+          <p className="mt-1 text-xs text-text-tertiary">后台 DNS Health Check 的真实 `/v1/test/dns_delay` 结果，不是 Core→Surge API RTT。</p>
+        </div>
+        <div className="flex rounded-[12px] border border-border bg-surface p-0.5">
+          {(["24h", "7d"] as HealthAnalyticsRange[]).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onRangeChange(value)}
+              className={cn(
+                "touch-target rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors duration-hover",
+                range === value ? "bg-accent/12 text-accent" : "text-text-secondary hover:text-text-primary",
+              )}
+            >
+              {value === "24h" ? "24 小时" : "7 天"}
+            </button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-36 w-full" />
+        ) : error ? (
+          <ErrorStateView error={error} api="/api/analytics/dns" compact onRetry={onRetry} />
+        ) : points.length === 0 ? (
+          <DataEmpty title="暂无 DNS 历史数据" description="等待后台 DNS Health Check 产生采样后，这里会显示延迟趋势。" compact />
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="min-w-0 rounded-[14px] border border-border/55 bg-surface-tertiary/20 p-3">
+              <DnsSparkline points={points} />
+              <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-text-tertiary">
+                <span>{new Date(points[0]!.sampledAt).toLocaleString()}</span>
+                <span>{new Date(latest!.sampledAt).toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
+              <TrendMetric label="平均" value={average === null ? "—" : `${Math.round(average)}ms`} />
+              <TrendMetric label="P95" value={p95 === null ? "—" : `${Math.round(p95)}ms`} />
+              <TrendMetric label="峰值" value={peak === null ? "—" : `${Math.round(peak)}ms`} />
+              <TrendMetric label="采样" value={String(points.length)} detail={latest?.domain ?? "—"} />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DnsSparkline({ points }: { points: DnsTrendPoint[] }) {
+  const values = points.map((point) => point.delayMs);
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const span = Math.max(1, max - min);
+  const coordinates = points.map((point, index) => {
+    const x = points.length === 1 ? 50 : index / (points.length - 1) * 100;
+    const y = 29 - ((point.delayMs - min) / span) * 26;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(" ");
+  const latest = points.at(-1)!;
+
+  return (
+    <div className="text-accent" role="img" aria-label={`DNS 延迟趋势，共 ${points.length} 个采样，最近 ${Math.round(latest.delayMs)} 毫秒`}>
+      <svg viewBox="0 0 100 32" preserveAspectRatio="none" className="h-28 w-full overflow-visible">
+        <line x1="0" y1="29" x2="100" y2="29" stroke="currentColor" strokeOpacity="0.12" vectorEffect="non-scaling-stroke" />
+        <polyline points={coordinates} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+}
+
+function TrendMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="rounded-[12px] bg-surface-tertiary/45 px-3 py-2.5">
+      <p className="text-[10px] text-text-tertiary">{label}</p>
+      <p className="mt-0.5 font-mono text-base font-semibold tabular-nums text-text-primary">{value}</p>
+      {detail && <p className="mt-0.5 truncate text-[10px] text-text-tertiary">{detail}</p>}
+    </div>
+  );
+}
+
 function DiagnosticRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
@@ -324,6 +447,13 @@ function LocalRow({ entry }: { entry: DnsLocalEntry }) {
       <td className="px-3 py-2.5 text-xs text-text-tertiary">{entry.comment ?? "—"}</td>
     </tr>
   );
+}
+
+function percentile(values: number[], percentileValue: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(percentileValue * sorted.length) - 1));
+  return sorted[index] ?? null;
 }
 
 function formatExpiry(ts: number | undefined): string {
