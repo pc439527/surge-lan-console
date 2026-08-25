@@ -156,6 +156,7 @@ export class BackupService {
   private async applyStagedRestore(stagedPath: string, expectedSha256: string): Promise<void> {
     const rollbackPath = `${this.databasePath}.restore-rollback-${randomUUID()}`;
     let currentMoved = false;
+    let restoreSucceeded = false;
 
     try {
       // A clean AppDatabase.close() checkpoints WAL. Remove any stale sidecars so
@@ -173,6 +174,7 @@ export class BackupService {
       }
 
       rmSync(rollbackPath, { force: true });
+      restoreSucceeded = true;
     } catch (error) {
       // Restore the exact cleanly-closed pre-operation database if anything after
       // the first rename fails. A separate Online Backup restore-point also remains.
@@ -181,16 +183,14 @@ export class BackupService {
         if (currentMoved && existsSync(rollbackPath)) renameSync(rollbackPath, this.databasePath);
       } catch (rollbackError) {
         const detail = rollbackError instanceof Error ? rollbackError.message : "unknown rollback error";
-        throw new CoreError("restore_rollback_failed", 500, `数据库恢复失败，文件级回滚也失败：${detail}`);
-      } finally {
-        rmSync(stagedPath, { force: true });
+        throw new CoreError("restore_rollback_failed", 500, `数据库恢复失败，文件级回滚也失败；rollback 文件已保留：${detail}`);
       }
 
       if (error instanceof CoreError) throw error;
       throw new CoreError("restore_failed", 500, error instanceof Error ? error.message : "数据库恢复失败。");
     } finally {
       rmSync(stagedPath, { force: true });
-      if (existsSync(rollbackPath) && existsSync(this.databasePath)) rmSync(rollbackPath, { force: true });
+      if (restoreSucceeded) rmSync(rollbackPath, { force: true });
     }
   }
 
