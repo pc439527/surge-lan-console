@@ -161,6 +161,31 @@
   background: transparent;
 }
 
+/* Dashboard V3: the status rail should not force a large blank region below
+   the traffic chart. On wide screens its rows become a compact two-column
+   inspector while badges/dividers continue to span the full rail. */
+@media (min-width: 1280px) {
+  .dashboard-primary-grid > :nth-child(2) > :last-child {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 16px;
+    row-gap: 9px;
+  }
+
+  .dashboard-primary-grid > :nth-child(2) > :last-child > * + * {
+    margin-top: 0 !important;
+  }
+
+  .dashboard-primary-grid > :nth-child(2) > :last-child > :first-child,
+  .dashboard-primary-grid > :nth-child(2) > :last-child > .my-3 {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-primary-grid > :nth-child(2) > :last-child > * {
+    min-width: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -1,12 +1,12 @@
 import { forwardRef, type HTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
-/** Layer 2 — Content Material card. NOT glass. */
+/** Layer 2 — Content Material surface. NOT glass. */
 export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("content-panel rounded-[20px]", className)}
+      className={cn("content-panel rounded-[18px]", className)}
       {...props}
     />
   ),
