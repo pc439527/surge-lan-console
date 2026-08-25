@@ -99,18 +99,18 @@ Daily Digest
 ### 已完成
 
 - [x] **24h / 7d / 30d Traffic**：Metrics Collector 写入 SQLite 5 分钟 / 1 小时 rollup；Traffic 页面按需读取长期趋势，不依赖浏览器常驻。
+- [x] **Policy Traffic**：复用 `/v1/metrics` 的 per-policy 累计 counter，按 5 分钟保存并处理 Surge 重启 counter reset；Traffic 页面支持 24h / 7d / 30d 策略流量排名、上传、下载、总量与占比。
 - [x] **DNS Trend**：基于后台 `/v1/test/dns_delay` 采样提供 24h / 7d 趋势、平均、P95、峰值与采样数；不再把 Core→Surge API RTT 当成 DNS 延迟。
 - [x] **Policy P50 / P95 / Availability**：Node Quality Collector 的真实节点结果跨策略组去重后计算 24h / 7d P50、P95、可用率与最近状态。
+- [x] **Memory / Uptime**：优先通过 `/v1/metrics` 采集真实运行时指标；旧设备不支持时仅从 `/v1/traffic.startTime` 回退 Uptime，Memory 保持 N/A；Health Center 提供 24h / 7d 历史趋势。
+- [x] **Error Trend**：按连接聚合 Surge Warning / Error 与 Scheduler Failure；Bark Failure 因当前通知历史为全局口径，单独作为 Console 全局指标展示。
 - [x] **Profile Snapshot / SHA-256 / Diff**：只抓取 `sensitive=0` 配置；支持 6h 自动快照、手动快照、Reload 后快照、SHA-256 去重、历史列表与两版本 Diff。
-- [x] **SQLite retention**：高频 Metrics 原始样本 2d、健康/事件原始样本 7d、5min Traffic rollup 30d、1h Traffic rollup 365d、Job Runs 30d、Notification History 90d。
+- [x] **SQLite retention**：高频 Metrics 原始样本 2d、健康/事件原始样本 7d、5min Traffic rollup 30d、1h Traffic rollup 365d、Policy Traffic counter 30d、Job Runs 30d、Notification History 90d。
 - [x] **Daily backup**：使用 Node `node:sqlite` Online Backup API 对活跃 WAL 数据库生成一致快照；默认每日自动备份，支持手动备份，最近保留 30 份。
 - [x] **Backup validation / Restore preflight foundation**：备份先写 `.partial`，执行 `PRAGMA quick_check`、schema migration version 与 SHA-256 校验，全部通过后再原子改名；Settings 可重新验证已有备份。
 
 ### 待完成
 
-- [ ] **Policy Traffic**：策略 / 节点维度流量归因与历史趋势。
-- [ ] **Memory / Uptime**：Core / Surge 运行时指标历史化与趋势。
-- [ ] **Error Trend**：Surge Event、Scheduler failure、通知失败等错误事件按时间聚合。
 - [ ] **Restore execution**：在 Restore preflight 通过后提供受控恢复流程；需要停 Scheduler / 关闭 DB、原子替换、重启 Core，并设计失败回滚。当前仅实现“恢复前验证”，尚未开放在线恢复按钮。
 - [ ] **Console update check**：当前版本与仓库最新版本 / commit 比较，并提供更新提示。
 - [ ] **Retention settings**：将当前安全默认保留周期开放为受约束的 Settings 配置。
