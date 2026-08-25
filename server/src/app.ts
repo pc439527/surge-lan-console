@@ -19,6 +19,7 @@ import { SecretVault } from "./secret-vault.js";
 import { SessionStore, type SessionInfo } from "./session-store.js";
 import { SurgeTransport } from "./surge-transport.js";
 import { TrafficAnalyticsService, type TrafficRange } from "./traffic-analytics.js";
+import { UpdateCheckService, type UpdateCheckConfig } from "./update-check-service.js";
 
 const SESSION_COOKIE = "slc_session";
 const MAX_JSON_BODY_BYTES = 256 * 1024;
@@ -29,6 +30,7 @@ interface CoreAppOptions {
   sessionAbsoluteMs: number;
   now?: () => number;
   onRestartRequested?: (restoreSucceeded: boolean) => void;
+  updateCheck?: UpdateCheckConfig;
 }
 interface AttemptBucket { failures: number; windowStartedAt: number; blockedUntil: number }
 
@@ -63,6 +65,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
   catch { throw new CoreError("invalid_json", 400, "请求 JSON 无法解析。"); }
 }
 function stringField(body: Record<string, unknown>, key: string): string { const value = body[key]; return typeof value === "string" ? value : ""; }
+function buildField(value: string | null): string { return (value ?? "").trim().slice(0, 128); }
 function cookieValue(request: IncomingMessage, name: string): string | null {
   const cookie = request.headers.cookie; if (!cookie) return null;
   for (const segment of cookie.split(";")) { const [rawName, ...rest] = segment.trim().split("="); if (rawName === name) return rest.join("="); } return null;
@@ -113,6 +116,7 @@ export function createCoreApp(options: CoreAppOptions) {
   const runtimeAnalytics = new RuntimeAnalyticsService(database, now);
   const profileHistory = new ProfileHistoryService(database, now);
   const retention = new RetentionService(database, now);
+  const updateCheck = new UpdateCheckService(options.updateCheck);
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
   let runtimeClosed = false;
@@ -142,6 +146,17 @@ export function createCoreApp(options: CoreAppOptions) {
         catch (error) { if (error instanceof AuthError && error.code === "invalid_password") limiter.failure(ip); throw error; } return;
       }
       if (method === "POST" && pathname === "/api/auth/lock") { auth.lock(); clearSessionCookie(request, response); sendJson(response, 200, auth.state(null)); return; }
+
+      if (method === "GET" && pathname === "/api/update-check") {
+        requireSession(sessions, sessionToken);
+        const result = await updateCheck.check({
+          version: buildField(url.searchParams.get("version")),
+          commit: buildField(url.searchParams.get("commit")),
+          branch: buildField(url.searchParams.get("branch")),
+        }, url.searchParams.get("refresh") === "1");
+        sendJson(response, 200, result);
+        return;
+      }
 
       if (method === "GET" && pathname === "/api/connections") { requireSession(sessions, sessionToken); sendJson(response, 200, connections.list()); return; }
       if (method === "POST" && pathname === "/api/connections") { const session = requireSession(sessions, sessionToken); const body = await readJson(request); const created = connections.create(asConnectionInput(body), session.vaultKey); scheduler.ensureDefaults(created.id); sendJson(response, 201, created); return; }
