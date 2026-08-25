@@ -1,0 +1,266 @@
+/* V7 responsive foundation — respond to real content width after Sidebar/zoom. */
+
+.page-container {
+  container-name: page;
+  container-type: inline-size;
+}
+
+/* Consistent keyboard focus across native controls and custom interactive rows. */
+:where(button, a, input, textarea, select, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 76%, white 24%);
+  outline-offset: 2px;
+}
+
+/* Light mode QA: keep frosted surfaces distinct without making them grey cards. */
+html:not(.dark) .content-panel {
+  background: color-mix(in srgb, var(--surface-panel) 96%, white 4%);
+  border-color: color-mix(in srgb, var(--border) 86%, var(--accent) 14%);
+}
+
+html:not(.dark) .sidebar-glass {
+  background: color-mix(in srgb, var(--sidebar-tint) 88%, white 12%);
+}
+
+html:not(.dark) .topbar-glass {
+  background: color-mix(in srgb, var(--glass) 82%, white 18%);
+}
+
+html:not(.dark) tbody tr:hover,
+html:not(.dark) [data-row-hover]:hover {
+  background: var(--row-hover);
+}
+
+/* Shared data-state surfaces. Full-page states get a quiet contained surface;
+   compact states inherit their parent Card and remain visually light. */
+[data-state][data-compact="false"] {
+  border: 1px dashed var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-tertiary) 62%, transparent);
+  padding-inline: 20px;
+}
+
+[data-state="error"][data-compact="false"],
+[data-state="network-error"][data-compact="false"] {
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--border));
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface-tertiary));
+}
+
+[data-state="unauthorized"][data-compact="false"] {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
+}
+
+/* Browser-native rendering containment for very long data lists. This keeps
+   rows outside the viewport out of paint/layout work without adding another
+   runtime dependency or changing table semantics. */
+main[data-page="requests"] tbody tr,
+main[data-page="rules"] tbody tr,
+main[data-page="scripts"] tbody tr,
+main[data-page="node-quality"] tbody tr,
+main[data-page="dns"] tbody tr,
+main[data-page="events"] .divide-y > div {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+
+/* MetricStrip must respond to the page content box, not the viewport. */
+@container page (max-width: 819px) {
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@container page (max-width: 479px) {
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > * {
+    border-left: 0 !important;
+  }
+
+  main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] > * + * {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
+  }
+}
+
+/* PageHeader actions stack based on available content width. */
+@container page (max-width: 680px) {
+  main[data-page] > div > header:first-child {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  main[data-page] > div > header:first-child > :last-child:not(:first-child) {
+    justify-content: flex-start !important;
+    width: 100%;
+  }
+}
+
+/* Inspector pages: the secondary rail only stays beside content when the
+   actual page container has enough room. This fixes 110–150% browser zoom. */
+@container page (max-width: 1180px) {
+  main[data-page="connections"] > div > div.grid,
+  main[data-page="settings"] > div > div.grid,
+  main[data-page="dns"] > div > div.grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  main[data-page="connections"] > div > div.grid > :last-child,
+  main[data-page="settings"] > div > div.grid > :last-child,
+  main[data-page="dns"] > div > div.grid > :last-child {
+    position: static !important;
+    top: auto !important;
+  }
+}
+
+/* Fleet and policy tiles use their own available width instead of viewport
+   md/xl/2xl breakpoints. */
+main[data-page="fleet"] section > div.grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)) !important;
+}
+
+main[data-page="policies"] [class~="md:grid-cols-2"][class~="xl:grid-cols-3"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+}
+
+/* Request/DNS/Traffic already have mobile card renderers. Activate those from
+   content width too, so zoom/sidebar changes do not wait for viewport md. */
+@container page (max-width: 860px) {
+  main[data-page="requests"] div[class~="hidden"][class~="md:block"],
+  main[data-page="traffic"] div[class~="hidden"][class~="md:block"],
+  main[data-page="dns"] div[class~="hidden"][class~="md:block"] {
+    display: none !important;
+  }
+
+  main[data-page="requests"] div[class~="md:hidden"],
+  main[data-page="traffic"] div[class~="md:hidden"],
+  main[data-page="dns"] div[class~="md:hidden"] {
+    display: block !important;
+  }
+
+  main[data-page="requests"] button[role="combobox"] {
+    flex: 1 1 140px;
+    width: auto !important;
+  }
+}
+
+/* Settings controls stop fighting for horizontal space when the panel narrows. */
+@container page (max-width: 620px) {
+  main[data-page="settings"] .divide-y > div.flex {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+  }
+
+  main[data-page="settings"] .divide-y > div.flex > :last-child {
+    width: 100%;
+  }
+}
+
+/* Rules, Scripts, Node Quality and DNS-local historically had desktop-only
+   tables. Reflow them into labelled cards using content width. */
+@container page (max-width: 760px) {
+  main[data-page="rules"] .overflow-x-auto,
+  main[data-page="scripts"] .overflow-x-auto,
+  main[data-page="node-quality"] .overflow-x-auto,
+  main[data-page="dns"] .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  main[data-page="rules"] table,
+  main[data-page="scripts"] table,
+  main[data-page="node-quality"] table,
+  main[data-page="dns"] table {
+    display: block;
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  main[data-page="rules"] table thead,
+  main[data-page="scripts"] table thead,
+  main[data-page="node-quality"] table thead,
+  main[data-page="dns"] table thead {
+    display: none;
+  }
+
+  main[data-page="rules"] table tbody,
+  main[data-page="scripts"] table tbody,
+  main[data-page="node-quality"] table tbody,
+  main[data-page="dns"] table tbody {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+  }
+
+  main[data-page="rules"] table tbody tr,
+  main[data-page="scripts"] table tbody tr,
+  main[data-page="node-quality"] table tbody tr,
+  main[data-page="dns"] table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: hidden;
+    padding: 10px;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-tertiary) 72%, transparent);
+  }
+
+  main[data-page="rules"] table tbody td,
+  main[data-page="scripts"] table tbody td,
+  main[data-page="node-quality"] table tbody td,
+  main[data-page="dns"] table tbody td {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    max-width: none !important;
+    padding: 6px 4px !important;
+    text-align: left !important;
+  }
+
+  main[data-page="rules"] table tbody td::before,
+  main[data-page="scripts"] table tbody td::before,
+  main[data-page="node-quality"] table tbody td::before,
+  main[data-page="dns"] table tbody td::before {
+    color: var(--text-tertiary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  main[data-page="rules"] table tbody td:nth-child(1)::before { content: "类型"; }
+  main[data-page="rules"] table tbody td:nth-child(2)::before { content: "内容"; }
+  main[data-page="rules"] table tbody td:nth-child(3)::before { content: "策略"; }
+
+  main[data-page="scripts"] table tbody td:nth-child(1)::before { content: "名称"; }
+  main[data-page="scripts"] table tbody td:nth-child(2)::before { content: "类型"; }
+  main[data-page="scripts"] table tbody td:nth-child(3)::before { content: "路径"; }
+  main[data-page="scripts"] table tbody td:nth-child(4)::before { content: "来源"; }
+  main[data-page="scripts"] table tbody td:nth-child(5)::before { content: "操作"; }
+  main[data-page="scripts"] table tbody td:nth-child(5) > div { justify-content: flex-start !important; flex-wrap: wrap; }
+
+  main[data-page="node-quality"] table tbody td:nth-child(1)::before { content: "排名"; }
+  main[data-page="node-quality"] table tbody td:nth-child(2)::before { content: "节点"; }
+  main[data-page="node-quality"] table tbody td:nth-child(3)::before { content: "策略组"; }
+  main[data-page="node-quality"] table tbody td:nth-child(4)::before { content: "延迟"; }
+  main[data-page="node-quality"] table tbody td:nth-child(5)::before { content: "评分"; }
+
+  main[data-page="dns"] table:has(thead th:nth-child(6):last-child) tbody td:nth-child(1)::before { content: "域名"; }
+  main[data-page="dns"] table:has(thead th:nth-child(6):last-child) tbody td:nth-child(2)::before { content: "IP"; }
+  main[data-page="dns"] table:has(thead th:nth-child(6):last-child) tbody td:nth-child(3)::before { content: "服务器"; }
+  main[data-page="dns"] table:has(thead th:nth-child(6):last-child) tbody td:nth-child(4)::before { content: "路径"; }
+  main[data-page="dns"] table:has(thead th:nth-child(6):last-child) tbody td:nth-child(5)::before { content: "查询"; }
+  main[data-page="dns"] table:has(thead th:nth-child(6):last-child) tbody td:nth-child(6)::before { content: "TTL"; }
+
+  main[data-page="dns"] table:has(thead th:nth-child(5):last-child) tbody td:nth-child(1)::before { content: "域名"; }
+  main[data-page="dns"] table:has(thead th:nth-child(5):last-child) tbody td:nth-child(2)::before { content: "地址"; }
+  main[data-page="dns"] table:has(thead th:nth-child(5):last-child) tbody td:nth-child(3)::before { content: "来源"; }
+  main[data-page="dns"] table:has(thead th:nth-child(5):last-child) tbody td:nth-child(4)::before { content: "DNS"; }
+  main[data-page="dns"] table:has(thead th:nth-child(5):last-child) tbody td:nth-child(5)::before { content: "注释"; }
+}
+
+@media (forced-colors: active) {
+  [data-state],
+  main[data-page] table tbody tr {
+    border: 1px solid CanvasText;
+  }
+}
