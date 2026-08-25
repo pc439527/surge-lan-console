@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { BackupService } from "./backup-service.js";
 import type { AppDatabase } from "./database.js";
 import type { ConnectionService } from "./connection-service.js";
 import {
@@ -16,7 +17,7 @@ import type { RuntimeVault } from "./runtime-vault.js";
 import type { SurgeTransport, SurgeProxyResult } from "./surge-transport.js";
 import { TrafficAnalyticsService } from "./traffic-analytics.js";
 
-export type JobType = "device-heartbeat" | "metrics" | "events" | "dns-health" | "node-health" | "profile-snapshot" | "profile-reload" | "daily-digest";
+export type JobType = "device-heartbeat" | "metrics" | "events" | "dns-health" | "node-health" | "profile-snapshot" | "profile-reload" | "daily-digest" | "database-backup";
 
 interface JobRow {
   id: string;
@@ -74,6 +75,7 @@ const MIN_INTERVAL: Record<JobType, number> = {
   "profile-snapshot": 900,
   "profile-reload": 300,
   "daily-digest": 3600,
+  "database-backup": 3600,
 };
 
 const EVENT_CURSOR_LIMIT = 400;
@@ -85,6 +87,7 @@ export class SchedulerService {
   private readonly retention: RetentionService;
   private readonly trafficAnalytics: TrafficAnalyticsService;
   private readonly profileHistory: ProfileHistoryService;
+  private readonly backups: BackupService | null;
   private announcedUnlock = false;
 
   constructor(
@@ -97,12 +100,14 @@ export class SchedulerService {
     this.retention = new RetentionService(database);
     this.trafficAnalytics = new TrafficAnalyticsService(database);
     this.profileHistory = new ProfileHistoryService(database);
+    this.backups = database.location() ? new BackupService(database) : null;
   }
 
   start(): void {
     if (this.timer) return;
     this.ensureDefaultsForAll();
     this.ensureDailyDigest();
+    this.ensureDatabaseBackup();
     this.retention.runIfDue();
     this.timer = setInterval(() => { void this.tick(); }, 1_000);
     this.timer.unref();
@@ -180,7 +185,7 @@ export class SchedulerService {
     let run: JobRun;
 
     try {
-      await this.perform(job);
+      await this.perform(job, manual);
       this.publishJobRecovery(job);
     } catch (error) {
       status = "error";
@@ -208,8 +213,13 @@ export class SchedulerService {
     return run;
   }
 
-  private async perform(job: JobRow): Promise<void> {
+  private async perform(job: JobRow, manual: boolean): Promise<void> {
     if (job.type === "daily-digest") { this.runDailyDigest(); return; }
+    if (job.type === "database-backup") {
+      if (!this.backups) throw new CoreError("backup_unavailable", 409, "当前数据库不支持持久化备份。");
+      await this.backups.create(manual ? "manual" : "scheduled");
+      return;
+    }
     if (!job.connection_id) throw new CoreError("job_connection_missing", 409, "任务缺少连接。");
     const key = this.runtimeVault.getKey();
     try {
@@ -475,6 +485,8 @@ export class SchedulerService {
   }
 
   private ensureDailyDigest(): void { this.ensureJob("daily-digest", null, 86_400, false); }
+
+  private ensureDatabaseBackup(): void { this.ensureJob("database-backup", null, 86_400, true); }
 
   private ensureJob(type: JobType, connectionId: string | null, interval: number, enabled: boolean): void {
     const existing = this.database.queryOne<{ id: string }>(`
