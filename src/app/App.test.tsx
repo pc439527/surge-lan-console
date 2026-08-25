@@ -1,11 +1,21 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import App from "./App";
 
+vi.mock("@/lib/core-api", () => ({
+  coreApi: {
+    getAuthState: vi.fn().mockResolvedValue({
+      initialized: true,
+      authenticated: true,
+      sessionExpiresAt: null,
+    }),
+  },
+}));
+
 describe("App", () => {
-  it("renders the scaffold shell", () => {
+  it("renders the scaffold shell after Core authentication", async () => {
     render(<App />);
-    expect(screen.getAllByText("仪表盘").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("仪表盘")).length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Mobile navigation")).toBeInTheDocument();
   });
 });

@@ -4,15 +4,23 @@
   "version": "0.5.0",
   "type": "module",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "core:build": "tsc -p server/tsconfig.json",
+    "core:start": "node server/dist/index.js",
+    "core:dev": "pnpm core:build && pnpm core:start",
+    "build:web": "tsc --noEmit && vite build",
+    "build": "pnpm build:web && pnpm core:build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck:web": "tsc --noEmit",
+    "typecheck:core": "tsc -p server/tsconfig.json --noEmit",
+    "typecheck": "pnpm typecheck:web && pnpm typecheck:core",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test:web": "vitest run",
+    "test:core": "pnpm core:build && node --test server/test/*.test.mjs",
+    "test": "pnpm test:web && pnpm test:core",
     "test:watch": "vitest",
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },

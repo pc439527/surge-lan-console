@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
-import { Stethoscope } from "lucide-react";
+import { LockKeyhole, Stethoscope } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/Switch";
 import { AppearanceSwitcher } from "@/components/ui/AppearanceSwitcher";
 import { useSurgeClient, useSurgeClientState } from "@/app/surge-client-context";
 import { surgeKeys } from "@/lib/surge-keys";
+import { coreApi } from "@/lib/core-api";
 import type { FeatureState } from "@/api/types";
 import { usePreferencesStore } from "@/stores/preferences-store";
 import { BUILD_INFO, formatBuildTime } from "@/lib/version";
@@ -44,6 +45,14 @@ export function SettingsPage() {
     onError: () => toast.error("更新功能失败"),
   });
 
+  const lockConsole = useMutation({
+    mutationFn: coreApi.lock,
+    onSuccess: (state) => {
+      queryClient.setQueryData(["core", "auth-state"], state);
+    },
+    onError: () => toast.error("锁定控制台失败"),
+  });
+
   const features = featuresQuery.data;
   const featureList: { key: keyof FeatureState; label: string; description: string }[] = [
     { key: "mitm", label: "MitM", description: "HTTPS 解密与证书相关能力" },
@@ -57,7 +66,7 @@ export function SettingsPage() {
       <PageHeader
         eyebrow="Settings"
         title="设置"
-        description="外观、连接诊断、演示数据与 Surge 功能。"
+        description="外观、数据保护、连接诊断、演示数据与 Surge 功能。"
       />
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -73,6 +82,26 @@ export function SettingsPage() {
               </SettingRow>
               <SettingRow title="演示模式" description="无需设备即可体验模拟 Surge 数据；真实连接优先。">
                 <Switch checked={demoMode} onCheckedChange={setDemoMode} aria-label="演示模式" />
+              </SettingRow>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>安全</CardTitle>
+              <p className="text-xs text-text-tertiary">本地数据密码由 Core 管理，Session 只保存在当前浏览器 Cookie 与 Core 内存中。</p>
+            </CardHeader>
+            <CardContent className="divide-y divide-border/50 pt-1">
+              <SettingRow title="数据保护" description="立即结束当前解锁 Session；再次进入需要输入数据密码。">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={lockConsole.isPending}
+                  onClick={() => lockConsole.mutate()}
+                >
+                  <LockKeyhole className="h-4 w-4" />
+                  立即锁定
+                </Button>
               </SettingRow>
             </CardContent>
           </Card>
