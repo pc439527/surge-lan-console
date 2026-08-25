@@ -23,8 +23,8 @@ export class RetentionService {
     const isoBefore = (ageMs: number) => new Date(now - ageMs).toISOString();
 
     this.database.transaction(() => {
-      // High-frequency traffic samples are intentionally short-lived. Phase 15
-      // aggregation will retain long-term 5m/1h summaries instead of raw payloads.
+      // High-frequency traffic samples are intentionally short-lived. Long-term
+      // analytics come from traffic_rollups instead of retaining raw JSON.
       this.database.execute(
         "DELETE FROM collector_samples WHERE kind = 'metrics' AND sampled_at < ?",
         isoBefore(2 * DAY_MS),
@@ -34,6 +34,17 @@ export class RetentionService {
       this.database.execute(
         "DELETE FROM collector_samples WHERE kind != 'metrics' AND sampled_at < ?",
         isoBefore(7 * DAY_MS),
+      );
+
+      // 5-minute resolution supports detailed recent charts; hourly points stay
+      // for a year without allowing the SQLite database to grow indefinitely.
+      this.database.execute(
+        "DELETE FROM traffic_rollups WHERE bucket_seconds = 300 AND bucket_start < ?",
+        isoBefore(30 * DAY_MS),
+      );
+      this.database.execute(
+        "DELETE FROM traffic_rollups WHERE bucket_seconds = 3600 AND bucket_start < ?",
+        isoBefore(365 * DAY_MS),
       );
 
       this.database.execute("DELETE FROM job_runs WHERE created_at < ?", isoBefore(30 * DAY_MS));
