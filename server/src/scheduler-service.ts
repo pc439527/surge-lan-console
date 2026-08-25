@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { AppDatabase } from "./database.js";
 import type { ConnectionService } from "./connection-service.js";
+import {
+  DNS_HIGH_LATENCY_MS,
+  dnsHealthDomainFromConfig,
+  parseDnsDelayMs,
+} from "./dns-health.js";
 import type { EventBus } from "./event-bus.js";
 import { parseSurgeEvents } from "./event-collector.js";
 import { CoreError } from "./errors.js";
@@ -205,7 +210,7 @@ export class SchedulerService {
         case "device-heartbeat": await this.runHeartbeat(job.connection_id, credentials); return;
         case "metrics": await this.collect(job.connection_id, "metrics", credentials, "/v1/traffic"); return;
         case "events": await this.collectEvents(job.connection_id, credentials); return;
-        case "dns-health": await this.runDnsHealth(job.connection_id, credentials); return;
+        case "dns-health": await this.runDnsHealth(job, credentials); return;
         case "node-health": await this.runNodeHealth(job.connection_id, credentials); return;
         case "profile-reload": await this.runProfileReload(job.connection_id, credentials); return;
         default: throw new CoreError("unknown_job_type", 500, "未知自动任务类型。");
@@ -230,18 +235,72 @@ export class SchedulerService {
     this.events.publish({ type: "device-recovery", fingerprint: `device:${connectionId}`, title: "Surge 设备恢复", body: `${credentials.connection.name} 已恢复连接。`, severity: "info", recovery: true, connectionId });
   }
 
-  private async runDnsHealth(connectionId: string, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
+  private async runDnsHealth(job: JobRow, credentials: Parameters<SurgeTransport["request"]>[0]): Promise<void> {
+    const connectionId = job.connection_id;
+    if (!connectionId) throw new CoreError("job_connection_missing", 409, "DNS 健康检查缺少连接。");
+    const domain = dnsHealthDomainFromConfig(job.config_json);
+
     try {
-      const result = await this.surge.request(credentials, "GET", "/v1/dns", null, {}, 5_000);
-      if (result.statusCode < 200 || result.statusCode >= 300) throw new CoreError("dns_http_error", 502, `DNS API 返回 HTTP ${result.statusCode}。`);
-      if (result.latencyMs > 1500) {
-        this.events.publish({ type: "dns-high-latency", fingerprint: `dns:${connectionId}`, title: "DNS 响应延迟过高", body: `${credentials.connection.name} DNS API 延迟 ${result.latencyMs}ms。`, severity: "warning", connectionId });
-      } else {
-        this.events.publish({ type: "dns-recovery", fingerprint: `dns:${connectionId}`, title: "DNS 状态恢复", body: `${credentials.connection.name} DNS 检查恢复正常。`, severity: "info", recovery: true, connectionId });
+      const cache = await this.surge.request(credentials, "GET", "/v1/dns", null, {}, 5_000);
+      if (cache.statusCode < 200 || cache.statusCode >= 300) {
+        throw new CoreError("dns_http_error", 502, `DNS API 返回 HTTP ${cache.statusCode}。`);
       }
-      this.storeSample(connectionId, "dns", result.body);
+      this.storeSample(connectionId, "dns", cache.body);
+
+      const requestBody = Buffer.from(JSON.stringify({ domain }));
+      const result = await this.surge.request(
+        credentials,
+        "POST",
+        "/v1/test/dns_delay",
+        requestBody,
+        { contentType: "application/json" },
+        10_000,
+      );
+      if (result.statusCode < 200 || result.statusCode >= 300) {
+        throw new CoreError("dns_delay_http_error", 502, `DNS Delay API 返回 HTTP ${result.statusCode}。`);
+      }
+
+      const delayMs = parseDnsDelayMs(result.body);
+      this.storeSample(
+        connectionId,
+        "dns-health",
+        Buffer.from(JSON.stringify({
+          domain,
+          delayMs,
+          apiLatencyMs: result.latencyMs,
+          measuredAt: new Date().toISOString(),
+        })),
+      );
+
+      if (delayMs > DNS_HIGH_LATENCY_MS) {
+        this.events.publish({
+          type: "dns-high-latency",
+          fingerprint: `dns:${connectionId}`,
+          title: "DNS 解析延迟过高",
+          body: `${credentials.connection.name} · ${domain} · ${delayMs}ms`,
+          severity: "warning",
+          connectionId,
+        });
+      } else {
+        this.events.publish({
+          type: "dns-recovery",
+          fingerprint: `dns:${connectionId}`,
+          title: "DNS 状态恢复",
+          body: `${credentials.connection.name} · ${domain} · ${delayMs}ms`,
+          severity: "info",
+          recovery: true,
+          connectionId,
+        });
+      }
     } catch (error) {
-      this.events.publish({ type: "dns-failure", fingerprint: `dns:${connectionId}`, title: "DNS 检查失败", body: `${credentials.connection.name} DNS API 无法正常响应。`, severity: "error", connectionId });
+      this.events.publish({
+        type: "dns-failure",
+        fingerprint: `dns:${connectionId}`,
+        title: "DNS 检查失败",
+        body: `${credentials.connection.name} · ${domain} 无法完成 DNS 延迟测试。`,
+        severity: "error",
+        connectionId,
+      });
       throw error;
     }
   }
