@@ -17,36 +17,36 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const connections = useConnectionStore((s) => s.connections);
   const activeId = useConnectionStore((s) => s.activeConnectionId);
   const active = connections.find((c) => c.id === activeId) ?? null;
-  // 能力报告（全站共享同一份缓存）—— 探测确认不支持的功能在导航中标记。
   const { data: capability } = useCapabilitiesQuery();
 
   return (
     <aside
       className={cn(
-        "glass fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-border/40 transition-[width] duration-page ease-apple lg:flex",
+        "glass sidebar-glass fixed inset-y-0 left-0 z-40 hidden flex-col border-y-0 border-l-0 border-r border-border/50 transition-[width] duration-page ease-apple lg:flex",
         collapsed ? "w-[72px]" : "w-[236px]",
       )}
     >
-      {/* Logo */}
-      <div className={cn("flex h-14 items-center gap-2.5 border-b border-border/40 px-4", collapsed && "justify-center px-0")}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-accent text-sm font-bold text-white">
+      <div className={cn("flex h-16 items-center gap-2.5 border-b border-border/40 px-4", collapsed && "justify-center px-0")}>
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-accent text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.28),0_5px_14px_rgba(10,132,255,.22)]">
           S
         </div>
         {!collapsed && (
-          <span className="truncate text-sm font-semibold text-text-primary">Surge LAN Console</span>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-semibold tracking-[-0.01em] text-text-primary">Surge LAN Console</span>
+            <span className="block truncate text-[11px] text-text-tertiary">Local Network Console</span>
+          </div>
         )}
       </div>
 
-      {/* Nav — scrollable but invisible scrollbar (T09) */}
       <nav className="scrollbar-none flex-1 overflow-y-auto px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.title} className="mb-5">
             {!collapsed && (
-              <p className="mb-1.5 px-2 text-xs font-medium uppercase tracking-wider text-text-tertiary">
+              <p className="mb-1.5 px-2 text-xs font-medium tracking-wide text-text-tertiary">
                 {section.title}
               </p>
             )}
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               {section.items.map((item) => {
                 const unsupported = item.feature ? isFeatureUnsupported(capability, item.feature) : false;
                 return (
@@ -56,12 +56,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     title={unsupported ? item.label + "（当前平台不可用）" : item.label}
                     className={({ isActive }) =>
                       cn(
-                        "touch-target relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-medium outline-none transition-colors duration-hover ease-apple focus-visible:ring-2 focus-visible:ring-accent/50",
+                        "touch-target relative flex items-center gap-3 rounded-[11px] px-2.5 py-2 text-[13px] font-medium outline-none transition-all duration-hover ease-apple focus-visible:ring-2 focus-visible:ring-accent/50",
                         collapsed && "justify-center px-0",
                         unsupported && "opacity-55",
                         isActive
-                          ? "bg-accent/12 text-accent"
-                          : "text-text-secondary hover:bg-surface hover:text-text-primary",
+                          ? "sidebar-nav-active text-accent"
+                          : "text-text-secondary hover:bg-surface/70 hover:text-text-primary",
                       )
                     }
                   >
@@ -83,23 +83,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Current connection */}
-      <div className="border-t border-border/40 p-3">
+      <div className="p-3 pt-0">
         {active ? (
           <button
             type="button"
             className={cn(
-              "touch-target flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left outline-none transition-colors duration-hover hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent/50",
+              "touch-target flex w-full items-center gap-2.5 rounded-[14px] border border-border/60 bg-surface/65 px-3 py-2.5 text-left outline-none transition-all duration-hover hover:bg-surface-primary/80 focus-visible:ring-2 focus-visible:ring-accent/50",
               collapsed && "justify-center px-0",
             )}
             onClick={onToggle}
             title={active.name}
           >
-            <span className="h-2 w-2 shrink-0 rounded-pill bg-success" />
+            <span className="h-2 w-2 shrink-0 rounded-pill bg-success shadow-[0_0_0_3px_color-mix(in_srgb,var(--success)_14%,transparent)]" />
             {!collapsed && (
               <span className="min-w-0">
-                <span className="block truncate text-xs font-medium text-text-primary">{active.name}</span>
-                <span className="block truncate text-xs text-text-tertiary">
+                <span className="block truncate text-xs font-semibold text-text-primary">{active.name}</span>
+                <span className="block truncate font-mono text-[11px] text-text-tertiary">
                   {active.host}:{active.port}
                 </span>
               </span>
@@ -107,7 +106,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </button>
         ) : (
           !collapsed && (
-            <p className="px-2.5 text-xs text-text-tertiary">未连接</p>
+            <div className="rounded-[14px] border border-border/60 bg-surface/55 px-3 py-3">
+              <p className="text-xs text-text-tertiary">未连接</p>
+            </div>
           )
         )}
         {!collapsed && (

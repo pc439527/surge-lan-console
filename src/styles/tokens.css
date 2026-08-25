@@ -1,16 +1,18 @@
 /* DESIGN_SYSTEM.md — tokens.css */
 /* Layer 1 — Background */
 :root {
-  --background: #f4f7fc;
+  --background: #f3f6fb;
   --surface: rgba(255, 255, 255, 0.78);
   --surface-primary: #ffffff;
-  --surface-secondary: rgba(255, 255, 255, 0.78);
-  --surface-tertiary: rgba(242, 246, 252, 0.92);
+  --surface-secondary: rgba(255, 255, 255, 0.82);
+  --surface-tertiary: rgba(242, 246, 252, 0.94);
+  --surface-panel: rgba(255, 255, 255, 0.9);
+  --sidebar-tint: rgba(236, 243, 252, 0.82);
   --border-subtle: rgba(15, 23, 42, 0.07);
   --elevated: #ffffff;
-  --glass: rgba(255, 255, 255, 0.48);
-  --glass-border: rgba(255, 255, 255, 0.52);
-  --border: rgba(15, 23, 42, 0.07);
+  --glass: rgba(255, 255, 255, 0.54);
+  --glass-border: rgba(255, 255, 255, 0.62);
+  --border: rgba(15, 23, 42, 0.08);
   --text-primary: #111827;
   --text-secondary: #667085;
   --text-tertiary: #98a2b3;
@@ -22,6 +24,9 @@
   --chart-download: #bf5af2;
   --chart-grid: rgba(15, 23, 42, 0.05);
   --chart-axis: #98a2b3;
+  --ambient-accent: rgba(10, 132, 255, 0.1);
+  --hero-border: rgba(10, 132, 255, 0.18);
+  --shadow-panel: 0 1px 2px rgba(15, 23, 42, 0.035), 0 12px 34px rgba(30, 60, 120, 0.055);
   --shadow-glass: 0 8px 32px rgba(30, 60, 120, 0.1);
 
   /* Request protocol badges (Request Inspector V2) — semantic, theme-aware. */
@@ -41,13 +46,15 @@
   --background: #070a0f;
   --surface: rgba(18, 22, 30, 0.82);
   --surface-primary: #10141c;
-  --surface-secondary: rgba(18, 22, 30, 0.82);
-  --surface-tertiary: rgba(25, 31, 42, 0.92);
+  --surface-secondary: rgba(18, 22, 30, 0.88);
+  --surface-tertiary: rgba(25, 31, 42, 0.94);
+  --surface-panel: rgba(16, 20, 28, 0.92);
+  --sidebar-tint: rgba(12, 17, 25, 0.86);
   --border-subtle: rgba(255, 255, 255, 0.07);
   --elevated: #151a24;
-  --glass: rgba(20, 24, 32, 0.58);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --border: rgba(255, 255, 255, 0.07);
+  --glass: rgba(20, 24, 32, 0.64);
+  --glass-border: rgba(255, 255, 255, 0.11);
+  --border: rgba(255, 255, 255, 0.08);
   --text-primary: #f5f7fa;
   --text-secondary: #a8b0bd;
   --text-tertiary: #747d8b;
@@ -59,6 +66,9 @@
   --chart-download: #bf5af2;
   --chart-grid: rgba(255, 255, 255, 0.06);
   --chart-axis: #747d8b;
+  --ambient-accent: rgba(10, 132, 255, 0.14);
+  --hero-border: rgba(64, 156, 255, 0.22);
+  --shadow-panel: 0 1px 1px rgba(0, 0, 0, 0.24), 0 14px 38px rgba(0, 0, 0, 0.18);
   --shadow-glass: 0 10px 36px rgba(0, 0, 0, 0.28);
 
   /* Request protocol badges (dark) — keep hue, lift luminance. */
@@ -74,7 +84,7 @@
   --proto-unknown: #747d8b;
 }
 
-/* Radius tokens (DESIGN_SYSTEM §6) */
+/* Radius tokens (DESIGN_SYSTEM §5) */
 :root {
   --radius-xs: 8px;
   --radius-sm: 10px;
@@ -95,7 +105,7 @@
   --duration-page: 200ms;
 }
 
-/* Spacing scale (DESIGN_SYSTEM §7) */
+/* Spacing scale */
 :root {
   --space-1: 4px;
   --space-2: 8px;
@@ -108,7 +118,7 @@
   --space-12: 48px;
 }
 
-/* Typography scale (DESIGN_SYSTEM §9) */
+/* Typography scale */
 :root {
   --text-page-title: 26px;
   --text-section-title: 17px;

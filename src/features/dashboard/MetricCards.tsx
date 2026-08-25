@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, Clock3, Database, Radio } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/lib/cn";
 import { formatBytes, formatRate } from "@/lib/format";
 
 export interface MetricsData {
@@ -15,14 +16,16 @@ export interface MetricsData {
 export function MetricCards({ data }: { data: MetricsData }) {
   if (data.loading) {
     return (
-      <div className="dashboard-metric-grid grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:gap-4 xl:grid-cols-5">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Card key={i} className="p-4">
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="mt-3 h-8 w-24" />
-          </Card>
-        ))}
-      </div>
+      <Card className="overflow-hidden p-0">
+        <div className="dashboard-metric-grid grid grid-cols-2 xl:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className={cn("metric-cell p-4 sm:p-5", i > 0 && "xl:border-l xl:border-border/70")}>
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="mt-3 h-8 w-24" />
+            </div>
+          ))}
+        </div>
+      </Card>
     );
   }
 
@@ -32,6 +35,7 @@ export function MetricCards({ data }: { data: MetricsData }) {
       value: formatRate(data.uploadRate),
       icon: ArrowUp,
       color: "text-accent",
+      dot: "bg-accent",
       hint: "当前上传速率（所有接口合计）",
     },
     {
@@ -39,6 +43,7 @@ export function MetricCards({ data }: { data: MetricsData }) {
       value: formatRate(data.downloadRate),
       icon: ArrowDown,
       color: "text-chart-download",
+      dot: "bg-chart-download",
       hint: "当前下载速率（所有接口合计）",
     },
     {
@@ -46,6 +51,7 @@ export function MetricCards({ data }: { data: MetricsData }) {
       value: formatBytes(data.totalTraffic),
       icon: Database,
       color: "text-success",
+      dot: "bg-success",
       hint: "Surge 本次启动后的累计上传与下载",
     },
     {
@@ -53,6 +59,7 @@ export function MetricCards({ data }: { data: MetricsData }) {
       value: data.uptime,
       icon: Clock3,
       color: "text-text-secondary",
+      dot: "bg-text-tertiary",
       hint: "Surge 当前进程的持续运行时间",
     },
     {
@@ -60,23 +67,36 @@ export function MetricCards({ data }: { data: MetricsData }) {
       value: String(data.activeRequests),
       icon: Radio,
       color: "text-text-primary",
+      dot: "bg-text-primary",
       hint: "Surge 当前的活动连接数（active requests）",
     },
   ];
 
   return (
-    <div className="dashboard-metric-grid grid grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:gap-4 xl:grid-cols-5">
-      {items.map((item) => (
-        <Card key={item.label} className="p-4" title={item.hint}>
-          <div className="flex items-center gap-2">
-            <item.icon className={`h-4 w-4 ${item.color}`} />
-            <span className="text-[13px] text-text-secondary">{item.label}</span>
+    <Card className="overflow-hidden p-0">
+      <div className="dashboard-metric-grid grid grid-cols-2 xl:grid-cols-5">
+        {items.map((item, index) => (
+          <div
+            key={item.label}
+            className={cn(
+              "metric-cell relative px-4 py-4 sm:px-5 sm:py-5",
+              index > 0 && "xl:border-l xl:border-border/70",
+              index < 4 && "max-xl:border-b max-xl:border-border/50",
+              index % 2 === 1 && "max-xl:border-l max-xl:border-border/50",
+            )}
+            title={item.hint}
+          >
+            <div className="flex items-center gap-2">
+              <span className={cn("h-1.5 w-1.5 rounded-pill", item.dot)} />
+              <item.icon className={cn("h-3.5 w-3.5", item.color)} aria-hidden="true" />
+              <span className="text-xs font-medium text-text-secondary">{item.label}</span>
+            </div>
+            <p className="mt-2.5 truncate text-[24px] font-semibold tabular-nums tracking-[-0.025em] text-text-primary sm:text-[27px]">
+              {item.value}
+            </p>
           </div>
-          <p className="mt-3 text-[28px] font-semibold tabular-nums tracking-tight text-text-primary">
-            {item.value}
-          </p>
-        </Card>
-      ))}
-    </div>
+        ))}
+      </div>
+    </Card>
   );
 }
