@@ -11,6 +11,8 @@ const ruleSchema = z.object({ id: z.string(), channelId: z.string(), eventType: 
 const historySchema = z.object({ id: z.string(), channelId: z.string().nullable(), eventType: z.string(), fingerprint: z.string(), title: z.string(), body: z.string(), status: z.enum(["sent", "error", "suppressed"]), errorMessage: z.string().nullable(), createdAt: z.string() });
 const jobSchema = z.object({ id: z.string(), type: z.string(), connectionId: z.string().nullable(), enabled: z.boolean(), intervalSeconds: z.number(), nextRunAt: z.string(), lastRunAt: z.string().nullable() });
 const runSchema = z.object({ id: z.string(), jobId: z.string(), status: z.enum(["success", "error", "skipped"]), startedAt: z.string(), finishedAt: z.string(), durationMs: z.number(), message: z.string().nullable() });
+const backupInfoSchema = z.object({ id: z.string(), source: z.enum(["scheduled", "manual"]), createdAt: z.string(), sizeBytes: z.number() });
+const backupValidationSchema = backupInfoSchema.extend({ valid: z.boolean(), quickCheck: z.string(), schemaVersion: z.number().nullable(), sha256: z.string().length(64) });
 const trafficRangeSchema = z.enum(["24h", "7d", "30d"]);
 const trafficRollupPointSchema = z.object({
   bucketSeconds: z.number(),
@@ -64,6 +66,8 @@ export type NotificationRule = z.infer<typeof ruleSchema>;
 export type NotificationHistory = z.infer<typeof historySchema>;
 export type ScheduledJob = z.infer<typeof jobSchema>;
 export type JobRun = z.infer<typeof runSchema>;
+export type BackupInfo = z.infer<typeof backupInfoSchema>;
+export type BackupValidation = z.infer<typeof backupValidationSchema>;
 export type TrafficAnalyticsRange = z.infer<typeof trafficRangeSchema>;
 export type TrafficRollupPoint = z.infer<typeof trafficRollupPointSchema>;
 export type TrafficAnalytics = z.infer<typeof trafficAnalyticsSchema>;
@@ -111,6 +115,10 @@ export const coreApi = {
   updateJob: (id: string, input: { enabled?: boolean; intervalSeconds?: number }): Promise<ScheduledJob> => request(() => client.patch(`/automation/jobs/${encodeURIComponent(id)}`, input), jobSchema),
   runJob: (id: string): Promise<JobRun> => request(() => client.post(`/automation/jobs/${encodeURIComponent(id)}/run`), runSchema),
   listJobRuns: (limit = 100): Promise<JobRun[]> => request(() => client.get("/automation/runs", { params: { limit } }), z.array(runSchema)),
+
+  listBackups: (): Promise<BackupInfo[]> => request(() => client.get("/backups"), z.array(backupInfoSchema)),
+  createBackup: (): Promise<BackupValidation> => request(() => client.post("/backups"), backupValidationSchema),
+  validateBackup: (id: string): Promise<BackupValidation> => request(() => client.post("/backups/validate", { id }), backupValidationSchema),
 
   getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> =>
     request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
