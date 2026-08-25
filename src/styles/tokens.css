@@ -1,3 +1,5 @@
+@import "./responsive.css";
+
 /* DESIGN_SYSTEM.md — tokens.css */
 /* Layer 1 — Background */
 :root {
@@ -15,31 +17,33 @@
   --border: rgba(15, 23, 42, 0.08);
   --text-primary: #111827;
   --text-secondary: #667085;
-  --text-tertiary: #98a2b3;
+  --text-tertiary: #697386;
   --accent: #0a84ff;
-  --success: #34c759;
-  --warning: #ff9f0a;
-  --danger: #ff3b30;
+  --success: #248a3d;
+  --warning: #c66a00;
+  --danger: #d92d20;
   --chart-upload: #0a84ff;
-  --chart-download: #bf5af2;
-  --chart-grid: rgba(15, 23, 42, 0.05);
-  --chart-axis: #98a2b3;
+  --chart-download: #9c3fd4;
+  --chart-grid: rgba(15, 23, 42, 0.06);
+  --chart-axis: #697386;
   --ambient-accent: rgba(10, 132, 255, 0.1);
   --hero-border: rgba(10, 132, 255, 0.18);
+  --row-hover: rgba(10, 132, 255, 0.055);
+  --row-selected: rgba(10, 132, 255, 0.1);
   --shadow-panel: 0 1px 2px rgba(15, 23, 42, 0.035), 0 12px 34px rgba(30, 60, 120, 0.055);
   --shadow-glass: 0 8px 32px rgba(30, 60, 120, 0.1);
 
   /* Request protocol badges (Request Inspector V2) — semantic, theme-aware. */
-  --proto-http: #64748b;
-  --proto-https: #0a84ff;
-  --proto-tcp: #a855f7;
-  --proto-udp: #0891b2;
-  --proto-quic: #4f46e5;
-  --proto-dns: #f97316;
-  --proto-stun: #db2777;
-  --proto-ws: #7c3aed;
-  --proto-wss: #7c3aed;
-  --proto-unknown: #98a2b3;
+  --proto-http: #5f6b7a;
+  --proto-https: #0876d8;
+  --proto-tcp: #8f45bd;
+  --proto-udp: #087f95;
+  --proto-quic: #4740c4;
+  --proto-dns: #c65a08;
+  --proto-stun: #b42368;
+  --proto-ws: #6d35b1;
+  --proto-wss: #6d35b1;
+  --proto-unknown: #697386;
 }
 
 .dark {
@@ -57,7 +61,7 @@
   --border: rgba(255, 255, 255, 0.08);
   --text-primary: #f5f7fa;
   --text-secondary: #a8b0bd;
-  --text-tertiary: #747d8b;
+  --text-tertiary: #8a94a3;
   --accent: #0a84ff;
   --success: #30d158;
   --warning: #ffd60a;
@@ -65,9 +69,11 @@
   --chart-upload: #0a84ff;
   --chart-download: #bf5af2;
   --chart-grid: rgba(255, 255, 255, 0.06);
-  --chart-axis: #747d8b;
+  --chart-axis: #8a94a3;
   --ambient-accent: rgba(10, 132, 255, 0.14);
   --hero-border: rgba(64, 156, 255, 0.22);
+  --row-hover: rgba(64, 156, 255, 0.075);
+  --row-selected: rgba(64, 156, 255, 0.13);
   --shadow-panel: 0 1px 1px rgba(0, 0, 0, 0.24), 0 14px 38px rgba(0, 0, 0, 0.18);
   --shadow-glass: 0 10px 36px rgba(0, 0, 0, 0.28);
 
@@ -81,7 +87,7 @@
   --proto-stun: #f472b6;
   --proto-ws: #a78bfa;
   --proto-wss: #a78bfa;
-  --proto-unknown: #747d8b;
+  --proto-unknown: #8a94a3;
 }
 
 /* Radius tokens (DESIGN_SYSTEM §5) */
