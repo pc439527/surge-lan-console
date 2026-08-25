@@ -1,10 +1,16 @@
-# syntax=docker/dockerfile:1
 # Build identity:
 #   - UI version comes from package.json (vite.config.ts)
 #   - build time is generated at build time
 #   - GIT_COMMIT / GIT_BRANCH are optional build args; when omitted the UI
 #     reports "unknown" instead of a stale hard-coded revision.
 ARG APP_VERSION=local
+# ── Build identity (OPTIMIZATION_PLAN §84–85) ─────────────────
+#   docker build \
+#     --build-arg APP_VERSION=0.2.1 \
+#     --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
+#     --build-arg BUILD_TIME=$(date -Iseconds) \
+#     -t surge-lan-console:$(git rev-parse --short HEAD) .
+ARG APP_VERSION=0.2.1
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 
