@@ -40,7 +40,7 @@ services:
       surge-core:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "192.168.50.20:8080:80"
     restart: unless-stopped
     security_opt:
       - "no-new-privileges:true"
