@@ -15,21 +15,14 @@ const backupInfoSchema = z.object({ id: z.string(), source: z.enum(["scheduled",
 const backupValidationSchema = backupInfoSchema.extend({ valid: z.boolean(), quickCheck: z.string(), schemaVersion: z.number().nullable(), sha256: z.string().length(64) });
 const trafficRangeSchema = z.enum(["24h", "7d", "30d"]);
 const trafficRollupPointSchema = z.object({
-  bucketSeconds: z.number(),
-  bucketStart: z.string(),
-  sampleCount: z.number(),
-  avgUploadRate: z.number(),
-  avgDownloadRate: z.number(),
-  maxUploadRate: z.number(),
-  maxDownloadRate: z.number(),
-  uploadBytesDelta: z.number(),
-  downloadBytesDelta: z.number(),
+  bucketSeconds: z.number(), bucketStart: z.string(), sampleCount: z.number(), avgUploadRate: z.number(), avgDownloadRate: z.number(),
+  maxUploadRate: z.number(), maxDownloadRate: z.number(), uploadBytesDelta: z.number(), downloadBytesDelta: z.number(),
 });
-const trafficAnalyticsSchema = z.object({
-  connectionId: z.string(),
-  range: trafficRangeSchema,
-  points: z.array(trafficRollupPointSchema),
+const trafficAnalyticsSchema = z.object({ connectionId: z.string(), range: trafficRangeSchema, points: z.array(trafficRollupPointSchema) });
+const policyTrafficStatSchema = z.object({
+  name: z.string(), downloadBytes: z.number(), uploadBytes: z.number(), totalBytes: z.number(), sampleCount: z.number(), lastSeenAt: z.string(),
 });
+const policyTrafficAnalyticsSchema = z.object({ connectionId: z.string(), range: trafficRangeSchema, policies: z.array(policyTrafficStatSchema) });
 const healthRangeSchema = z.enum(["24h", "7d"]);
 const dnsTrendPointSchema = z.object({ sampledAt: z.string(), domain: z.string(), delayMs: z.number(), apiLatencyMs: z.number().nullable() });
 const dnsAnalyticsSchema = z.object({ connectionId: z.string(), range: healthRangeSchema, points: z.array(dnsTrendPointSchema) });
@@ -39,33 +32,13 @@ const policyHealthStatSchema = z.object({
   lastReachable: z.boolean(), lastSampledAt: z.string(),
 });
 const policyHealthAnalyticsSchema = z.object({ connectionId: z.string(), range: healthRangeSchema, nodes: z.array(policyHealthStatSchema) });
-const errorTrendPointSchema = z.object({
-  bucketStart: z.string(),
-  surgeWarnings: z.number(),
-  surgeErrors: z.number(),
-  jobFailures: z.number(),
-  total: z.number(),
-});
-const errorAnalyticsSchema = z.object({
-  connectionId: z.string(),
-  range: healthRangeSchema,
-  points: z.array(errorTrendPointSchema),
-  notificationFailuresGlobal: z.number(),
-});
+const errorTrendPointSchema = z.object({ bucketStart: z.string(), surgeWarnings: z.number(), surgeErrors: z.number(), jobFailures: z.number(), total: z.number() });
+const errorAnalyticsSchema = z.object({ connectionId: z.string(), range: healthRangeSchema, points: z.array(errorTrendPointSchema), notificationFailuresGlobal: z.number() });
 const runtimeTrendPointSchema = z.object({
-  sampledAt: z.string(),
-  source: z.enum(["metrics", "traffic"]),
-  uptimeSeconds: z.number().nullable(),
-  memoryBytes: z.number().nullable(),
-  activeRequests: z.number().nullable(),
-  dnsCacheEntries: z.number().nullable(),
-  activeBans: z.number().nullable(),
+  sampledAt: z.string(), source: z.enum(["metrics", "traffic"]), uptimeSeconds: z.number().nullable(), memoryBytes: z.number().nullable(),
+  activeRequests: z.number().nullable(), dnsCacheEntries: z.number().nullable(), activeBans: z.number().nullable(),
 });
-const runtimeAnalyticsSchema = z.object({
-  connectionId: z.string(),
-  range: healthRangeSchema,
-  points: z.array(runtimeTrendPointSchema),
-});
+const runtimeAnalyticsSchema = z.object({ connectionId: z.string(), range: healthRangeSchema, points: z.array(runtimeTrendPointSchema) });
 const profileSnapshotSchema = z.object({
   id: z.string(), connectionId: z.string(), sha256: z.string().length(64), profileName: z.string(),
   source: z.enum(["scheduled", "manual", "reload"]), capturedAt: z.string(), sizeBytes: z.number(),
@@ -92,6 +65,8 @@ export type BackupValidation = z.infer<typeof backupValidationSchema>;
 export type TrafficAnalyticsRange = z.infer<typeof trafficRangeSchema>;
 export type TrafficRollupPoint = z.infer<typeof trafficRollupPointSchema>;
 export type TrafficAnalytics = z.infer<typeof trafficAnalyticsSchema>;
+export type PolicyTrafficStat = z.infer<typeof policyTrafficStatSchema>;
+export type PolicyTrafficAnalytics = z.infer<typeof policyTrafficAnalyticsSchema>;
 export type HealthAnalyticsRange = z.infer<typeof healthRangeSchema>;
 export type DnsTrendPoint = z.infer<typeof dnsTrendPointSchema>;
 export type DnsAnalytics = z.infer<typeof dnsAnalyticsSchema>;
@@ -151,6 +126,7 @@ export const coreApi = {
   validateBackup: (id: string): Promise<BackupValidation> => request(() => client.post("/backups/validate", { id }, { timeout: 60_000 }), backupValidationSchema),
 
   getTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<TrafficAnalytics> => request(() => client.get("/analytics/traffic", { params: { connectionId, range } }), trafficAnalyticsSchema),
+  getPolicyTrafficAnalytics: (connectionId: string, range: TrafficAnalyticsRange = "24h"): Promise<PolicyTrafficAnalytics> => request(() => client.get("/analytics/policy-traffic", { params: { connectionId, range } }), policyTrafficAnalyticsSchema),
   getDnsAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<DnsAnalytics> => request(() => client.get("/analytics/dns", { params: { connectionId, range } }), dnsAnalyticsSchema),
   getPolicyHealthAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<PolicyHealthAnalytics> => request(() => client.get("/analytics/policy-health", { params: { connectionId, range } }), policyHealthAnalyticsSchema),
   getErrorAnalytics: (connectionId: string, range: HealthAnalyticsRange = "24h"): Promise<ErrorAnalytics> => request(() => client.get("/analytics/errors", { params: { connectionId, range } }), errorAnalyticsSchema),
