@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -26,7 +27,16 @@ function buildTime(): string {
   return new Date().toISOString();
 }
 
-export const APP_VERSION = process.env.VITE_APP_VERSION ?? "0.2.0";
+function packageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version?: unknown };
+    return typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export const APP_VERSION = process.env.VITE_APP_VERSION ?? packageVersion();
 export const GIT_COMMIT = process.env.VITE_GIT_COMMIT ?? gitCommit();
 export const GIT_BRANCH = process.env.VITE_GIT_BRANCH ?? gitBranch();
 export const BUILD_TIME = process.env.VITE_BUILD_TIME ?? buildTime();
