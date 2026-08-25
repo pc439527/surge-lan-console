@@ -24,3 +24,108 @@
     border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
   }
 }
+
+/* Dashboard recent feeds need to reflow their row contents, not only their
+   outer cards. On phones the old Time / Host / Status and Time / Level /
+   Message flex rows stayed desktop-shaped and forced the useful text into a
+   tiny truncated middle column. */
+@container page (max-width: 560px) {
+  main[data-page="dashboard"] .dashboard-secondary-grid {
+    flex-direction: column !important;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > * {
+    width: 100%;
+    min-width: 0 !important;
+    flex-basis: auto !important;
+  }
+
+  /* Keep the section title readable while the secondary action remains
+     tappable at 320px content widths. */
+  main[data-page="dashboard"] .dashboard-secondary-grid > * > :first-child {
+    gap: 8px !important;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > * > :first-child > :first-child {
+    min-width: 0;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > * > :first-child > :last-child {
+    flex-shrink: 0;
+  }
+
+  /* Recent requests: host gets a full-width first line; metadata moves below. */
+  main[data-page="dashboard"] .dashboard-secondary-grid > :first-child > :last-child > .border-b {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "host host"
+      "time status";
+    align-items: center !important;
+    gap: 6px 10px !important;
+    padding-block: 12px !important;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > :first-child > :last-child > .border-b > :nth-child(1) {
+    grid-area: time;
+    width: auto !important;
+    min-width: 0;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > :first-child > :last-child > .border-b > :nth-child(2) {
+    grid-area: host;
+    min-width: 0;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > :first-child > :last-child > .border-b > :nth-child(3) {
+    grid-area: status;
+    justify-self: end;
+    flex-shrink: 0;
+  }
+
+  /* Recent events: severity + time form the metadata line; the message gets
+     the full width below and may use up to three readable lines. */
+  main[data-page="dashboard"] .dashboard-secondary-grid > :nth-child(2) > :last-child > .border-b {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "level time"
+      "message message";
+    align-items: start !important;
+    gap: 6px 10px !important;
+    padding-block: 12px !important;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > :nth-child(2) > :last-child > .border-b > :nth-child(1) {
+    grid-area: time;
+    width: auto !important;
+    min-width: 0;
+    justify-self: end;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > :nth-child(2) > :last-child > .border-b > :nth-child(2) {
+    grid-area: level;
+    justify-self: start;
+    flex-shrink: 0;
+  }
+
+  main[data-page="dashboard"] .dashboard-secondary-grid > :nth-child(2) > :last-child > .border-b > :nth-child(3) {
+    grid-area: message;
+    min-width: 0;
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+}
