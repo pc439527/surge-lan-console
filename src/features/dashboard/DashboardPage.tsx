@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Activity, ArrowRight, CheckCircle2, Globe, Radar, ShieldCheck } from "lucide-react";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TrafficChart } from "@/features/traffic/TrafficChart";
-import { formatTime, formatEventTime, formatUptime, formatBytes } from "@/lib/format";
+import { formatTime, formatEventTime, formatUptime } from "@/lib/format";
 import { BUILD_INFO } from "@/lib/version";
 import { normalizeEpoch } from "@/api/normalize";
 import { useSurgeClientState } from "@/app/surge-client-context";
@@ -24,6 +24,7 @@ import {
 import { useFeaturesQuery, useOutboundModeQuery } from "@/features/shared/queries";
 import { useGroupSelectionsQuery } from "@/features/policies/policies-queries";
 import { surgeKeys } from "@/lib/surge-keys";
+import { coreApi } from "@/lib/core-api";
 import { OutboundModeControl } from "./OutboundModeControl";
 import type { DisplayEvent } from "./dashboard-queries";
 
@@ -62,8 +63,6 @@ function eventVariant(level: string): "default" | "warning" | "danger" {
   return "default";
 }
 
-const TRAIL_MAX = 300;
-
 export function DashboardPage() {
   const { client, missingKey, connectionId, connection, demoMode } = useSurgeClientState();
   const traffic = useTrafficQuery();
@@ -100,20 +99,23 @@ export function DashboardPage() {
     refetchInterval: false,
   });
 
-  const [trail, setTrail] = useState<{ time: number; upload: number; download: number }[]>([]);
-  const latestTraffic = traffic.data;
+  const trafficHistory = useQuery({
+    queryKey: ["core", "traffic-analytics", connectionId, "24h"],
+    queryFn: () => coreApi.getTrafficAnalytics(connectionId!, "24h"),
+    enabled: !!client && !!connectionId && !missingKey && !demoMode,
+    staleTime: 4 * 60_000,
+    refetchInterval: 5 * 60_000,
+    retry: false,
+  });
 
-  useEffect(() => {
-    setTrail([]);
-  }, [connectionId]);
-
-  useEffect(() => {
-    if (!latestTraffic) return;
-    setTrail((prev) => [
-      ...prev,
-      { time: Date.now(), upload: latestTraffic.uploadRate, download: latestTraffic.downloadRate },
-    ].slice(-TRAIL_MAX));
-  }, [latestTraffic, connectionId]);
+  const trafficHistorySeries = useMemo(
+    () => (trafficHistory.data?.points ?? []).map((point) => ({
+      time: new Date(point.bucketStart).getTime(),
+      upload: point.avgUploadRate,
+      download: point.avgDownloadRate,
+    })),
+    [trafficHistory.data],
+  );
 
   if (!client) {
     return (
@@ -214,20 +216,24 @@ export function DashboardPage() {
         <Card className="min-w-0 overflow-hidden xl:col-span-8">
           <CardHeader className="flex-row items-start justify-between gap-4">
             <div>
-              <CardTitle>实时流量</CardTitle>
-              <p className="mt-1 text-xs text-text-tertiary">最近 5 分钟 · 1 秒采样</p>
+              <CardTitle>24 小时流量趋势</CardTitle>
+              <p className="mt-1 text-xs text-text-tertiary">Core SQLite · 5 分钟聚合 · 每 5 分钟刷新</p>
             </div>
             <div className="rounded-pill border border-border/70 bg-surface-tertiary/70 px-3 py-1.5 text-xs text-text-secondary">
-              会话流量 · {formatBytes((traffic.data?.totalUpload ?? 0) + (traffic.data?.totalDownload ?? 0))}
+              5 分钟粒度
             </div>
           </CardHeader>
           <CardContent>
-            {traffic.isLoading ? (
+            {demoMode ? (
+              <HistoricalTrafficNotice title="演示模式暂无历史流量" detail="历史曲线来自 Core SQLite，真实连接运行后会自动形成 24 小时趋势。" />
+            ) : trafficHistory.isLoading ? (
               <Skeleton className="h-64 w-full" />
-            ) : traffic.isError ? (
-              <WidgetError label="流量不可用" />
+            ) : trafficHistory.isError ? (
+              <HistoricalTrafficNotice title="历史流量暂不可用" detail="无法读取 Core SQLite 的 24 小时聚合数据，请稍后重试。" />
+            ) : trafficHistorySeries.length === 0 ? (
+              <HistoricalTrafficNotice title="暂无 24 小时历史流量" detail="Metrics Collector 产生采样后，这里会按 5 分钟桶自动形成趋势曲线。" />
             ) : (
-              <TrafficChart series={trail} />
+              <TrafficChart series={trafficHistorySeries} height="clamp(240px, 28vw, 320px)" />
             )}
           </CardContent>
         </Card>
@@ -407,6 +413,16 @@ function StatusRow({ label, value, tone, mono }: { label: string; value: string;
     <div className="flex items-center justify-between gap-3">
       <span className="text-[13px] text-text-secondary">{label}</span>
       {badge}
+    </div>
+  );
+}
+
+function HistoricalTrafficNotice({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="flex h-64 flex-col items-center justify-center gap-2 px-4 text-center">
+      <Activity className="h-6 w-6 text-text-tertiary" aria-hidden="true" />
+      <p className="text-sm font-medium text-text-primary">{title}</p>
+      <p className="max-w-md text-xs leading-5 text-text-tertiary">{detail}</p>
     </div>
   );
 }

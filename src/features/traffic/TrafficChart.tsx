@@ -10,6 +10,8 @@ echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 interface TrafficChartProps {
   /** latest snapshots, oldest first */
   series: { time: number; upload: number; download: number }[];
+  /** Optional explicit chart height. Dashboard uses this to avoid tall mobile charts. */
+  height?: number | string;
 }
 
 /** Read a CSS custom property from :root (theme-aware, see tokens.css). */
@@ -19,7 +21,7 @@ function cssVar(name: string, fallback: string): string {
   return value || fallback;
 }
 
-export function TrafficChart({ series }: TrafficChartProps) {
+export function TrafficChart({ series, height }: TrafficChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -64,6 +66,9 @@ export function TrafficChart({ series }: TrafficChartProps) {
     const splitColor = cssVar("--chart-grid", "rgba(15,23,42,.05)");
     const uploadArea = hexToRgba(upload, 0.08);
     const downloadArea = hexToRgba(download, 0.08);
+    const firstTime = series[0]?.time ?? 0;
+    const lastTime = series[series.length - 1]?.time ?? firstTime;
+    const spanMs = Math.max(0, lastTime - firstTime);
 
     chart.setOption({
       animationDuration: 120,
@@ -76,8 +81,15 @@ export function TrafficChart({ series }: TrafficChartProps) {
       grid: { left: 8, right: 8, top: 24, bottom: 8, containLabel: true },
       xAxis: {
         type: "time",
+        boundaryGap: false,
         axisLine: { lineStyle: { color: splitColor } },
-        axisLabel: { color: axisColor, fontSize: 11 },
+        axisLabel: {
+          color: axisColor,
+          fontSize: 11,
+          hideOverlap: true,
+          margin: 10,
+          formatter: (value: string | number) => formatTimeAxisLabel(Number(value), spanMs),
+        },
         splitLine: { show: false },
       },
       yAxis: {
@@ -110,7 +122,30 @@ export function TrafficChart({ series }: TrafficChartProps) {
     });
   }, [series]);
 
-  return <div ref={ref} className="h-64 w-full" aria-label="流量图表" />;
+  return (
+    <div
+      ref={ref}
+      className="h-64 w-full"
+      style={height === undefined ? undefined : { height, minHeight: height, flex: "0 0 auto" }}
+      aria-label="流量图表"
+    />
+  );
+}
+
+function formatTimeAxisLabel(value: number, spanMs: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  if (spanMs >= 48 * 60 * 60 * 1000) {
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  }
+
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  if (spanMs >= 6 * 60 * 60 * 1000) return `${hh}:${mm}`;
+
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
 }
 
 /** #rrggbb -> rgba(r,g,b,a); leaves rgba()/named colors untouched. */
