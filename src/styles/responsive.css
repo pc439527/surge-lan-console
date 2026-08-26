@@ -69,9 +69,10 @@ main[data-page="events"] .divide-y > div {
   }
 }
 
-/* Keep the common 390/430px phone layouts at 2 columns. Only exceptionally
-   narrow embedded/webview containers collapse the summary strip to one. */
-@container page (max-width: 359px) {
+/* A 390px viewport leaves about 350px of page-container width after layout
+   padding, so keep that supported phone target at two columns. Only truly
+   ultra-narrow embedded/webview containers collapse the summary strip. */
+@container page (max-width: 319px) {
   main[data-page] [class~="grid-cols-2"][class~="md:grid-cols-4"] {
     grid-template-columns: minmax(0, 1fr) !important;
   }
