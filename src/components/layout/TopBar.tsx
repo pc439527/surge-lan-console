@@ -13,7 +13,7 @@ export function TopBar() {
         <div className="lg:hidden">
           <MobileNavDrawer />
         </div>
-        <span className="truncate text-sm font-semibold text-text-primary">Surge LAN Console</span>
+        <span className="truncate text-sm font-semibold text-text-primary lg:hidden">Surge LAN Console</span>
         {demoMode && (
           <Badge variant="warning" className="ml-1">DEMO</Badge>
         )}
