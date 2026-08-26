@@ -10,8 +10,8 @@ import type { SurgeClient } from "@/api/surge-client";
  * from the Capability Probe the app already runs (the same probe that feeds
  * the sidebar, dashboard and Diagnostics). Status taxonomy:
  *
- *   healthy      — 端点 200 且页面 parser 通过
- *   warning      — parse-error 等可访问但需注意的状态
+ *   healthy      — 端点 200、页面 parser 通过且延迟未超过告警阈值
+ *   warning      — parse-error，或端点虽可用但响应明显过慢
  *   unavailable  — 网络/超时/认证失败（探测未完成）
  *   na (N/A)     — 平台正常不提供该 API（HTTP 404/405）—— **不是异常**
  *   unknown      — 尚未探测
@@ -41,6 +41,9 @@ export interface HealthSummary {
   checks: HealthCheck[];
 }
 
+/** 可访问但超过此阈值时标记为性能告警，而不是继续显示“全部正常”。 */
+export const SLOW_ENDPOINT_MS = 1000;
+
 export function healthStatusFromCapability(status: CapabilityStatus): HealthStatus {
   switch (status) {
     case "supported":
@@ -55,6 +58,12 @@ export function healthStatusFromCapability(status: CapabilityStatus): HealthStat
     default:
       return "unknown";
   }
+}
+
+function healthStatusWithLatency(status: CapabilityStatus, latencyMs: number | null): HealthStatus {
+  const base = healthStatusFromCapability(status);
+  if (base === "healthy" && latencyMs !== null && latencyMs > SLOW_ENDPOINT_MS) return "warning";
+  return base;
 }
 
 export function summarizeHealth(checks: HealthCheck[], checkedAt = Date.now()): HealthSummary {
@@ -83,23 +92,33 @@ const FEATURE_ENDPOINT: Record<string, string> = Object.fromEntries(
  * refetch and an independently computed "health" query).
  */
 export function healthFromCapability(report: CapabilityReport): HealthSummary {
+  const apiStatus: HealthStatus = report.latencyMs === null
+    ? "unavailable"
+    : report.latencyMs > SLOW_ENDPOINT_MS
+      ? "warning"
+      : "healthy";
   const checks: HealthCheck[] = [
     {
       id: "api",
       label: "API",
-      status: report.latencyMs === null ? "unavailable" : "healthy",
+      status: apiStatus,
       latencyMs: report.latencyMs,
-      detail: report.latencyMs === null ? "无法连接到 Surge API" : "API 连接正常",
+      detail: report.latencyMs === null
+        ? "无法连接到 Surge API"
+        : report.latencyMs > SLOW_ENDPOINT_MS
+          ? `API 可访问，但响应较慢（>${SLOW_ENDPOINT_MS}ms）`
+          : "API 连接正常",
       checkedAt: report.probedAt,
     },
   ];
   for (const [feature, status] of Object.entries(report.features)) {
+    const latencyMs = report.probes[FEATURE_ENDPOINT[feature]]?.latencyMs ?? null;
     checks.push({
       id: feature,
       label: FEATURE_LABEL[feature as keyof typeof FEATURE_LABEL] ?? feature.toUpperCase(),
-      status: healthStatusFromCapability(status),
-      latencyMs: report.probes[FEATURE_ENDPOINT[feature]]?.latencyMs ?? null,
-      detail: capabilityDetail(status),
+      status: healthStatusWithLatency(status, latencyMs),
+      latencyMs,
+      detail: capabilityDetail(status, latencyMs),
       checkedAt: report.probedAt,
     });
   }
@@ -110,18 +129,32 @@ export function healthFromCapability(report: CapabilityReport): HealthSummary {
 export async function getHealthReport(client: SurgeClient, signal?: AbortSignal): Promise<HealthSummary> {
   const checkedAt = Date.now();
   const result = await client.testConnection(signal);
+  const status: HealthStatus = result.authenticated
+    ? result.latencyMs !== null && result.latencyMs > SLOW_ENDPOINT_MS
+      ? "warning"
+      : "healthy"
+    : result.reachable
+      ? "warning"
+      : "unavailable";
   const api: HealthCheck = {
     id: "api",
     label: "API",
-    status: result.authenticated ? "healthy" : result.reachable ? "warning" : "unavailable",
+    status,
     latencyMs: result.latencyMs,
-    detail: result.authenticated ? "API 连接正常" : toFriendlyMessage(result.error),
+    detail: result.authenticated
+      ? result.latencyMs !== null && result.latencyMs > SLOW_ENDPOINT_MS
+        ? `API 可访问，但响应较慢（>${SLOW_ENDPOINT_MS}ms）`
+        : "API 连接正常"
+      : toFriendlyMessage(result.error),
     checkedAt,
   };
   return summarizeHealth([api], checkedAt);
 }
 
-function capabilityDetail(status: CapabilityStatus): string {
+function capabilityDetail(status: CapabilityStatus, latencyMs: number | null): string {
+  if (status === "supported" && latencyMs !== null && latencyMs > SLOW_ENDPOINT_MS) {
+    return `能力可用，但响应较慢（${Math.round(latencyMs)}ms）`;
+  }
   return {
     supported: "能力可用",
     unsupported: "该接口在此平台不提供（视为正常差异）",
