@@ -21,12 +21,13 @@ import { RetentionCard } from "./RetentionCard";
 const JOBS_KEY = ["core", "automation", "jobs"] as const;
 const RUNS_KEY = ["core", "automation", "runs"] as const;
 const BACKUPS_KEY = ["core", "backups"] as const;
+const RUNS_PREVIEW_LIMIT = 20;
 
 export function AutomationPage() {
   const queryClient = useQueryClient();
   const connections = useConnectionStore((s) => s.connections);
   const jobs = useQuery({ queryKey: JOBS_KEY, queryFn: coreApi.listJobs, refetchInterval: 15_000 });
-  const runs = useQuery({ queryKey: RUNS_KEY, queryFn: () => coreApi.listJobRuns(80), refetchInterval: 10_000 });
+  const runs = useQuery({ queryKey: RUNS_KEY, queryFn: () => coreApi.listJobRuns(RUNS_PREVIEW_LIMIT), refetchInterval: 10_000 });
   const backups = useQuery({ queryKey: BACKUPS_KEY, queryFn: coreApi.listBackups, refetchInterval: 60_000 });
   const refresh = async () => {
     await Promise.all([
@@ -78,18 +79,21 @@ export function AutomationPage() {
           <RetentionCard />
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-text-secondary" /><CardTitle>最近运行</CardTitle></div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-text-secondary" /><CardTitle>最近运行</CardTitle></div>
+                <span className="text-xs text-text-tertiary">最近 {RUNS_PREVIEW_LIMIT} 条</span>
+              </div>
             </CardHeader>
-            <CardContent className="divide-y divide-border/50">
+            <CardContent className="max-h-[520px] divide-y divide-border/50 overflow-y-auto pr-1">
               {runs.data?.length ? runs.data.map((run) => (
                 <div key={run.id} className="py-2.5 first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-2">
                     <StatusBadge status={run.status} />
-                    <span className="font-mono text-[10px] text-text-tertiary">{run.durationMs}ms</span>
+                    <span className="font-mono text-[11px] text-text-tertiary">{run.durationMs}ms</span>
                   </div>
-                  <p className="mt-1 truncate font-mono text-[10px] text-text-secondary">{run.jobId}</p>
-                  <p className="mt-0.5 text-[10px] text-text-tertiary">{new Date(run.finishedAt).toLocaleString()}</p>
-                  {run.message && <p className="mt-1 line-clamp-2 text-[10px] text-danger">{run.message}</p>}
+                  <p className="mt-1 truncate font-mono text-[11px] text-text-secondary">{run.jobId}</p>
+                  <p className="mt-0.5 text-[11px] text-text-tertiary">{new Date(run.finishedAt).toLocaleString()}</p>
+                  {run.message && <p className="mt-1 line-clamp-2 text-[11px] text-danger">{run.message}</p>}
                 </div>
               )) : <p className="py-5 text-center text-sm text-text-secondary">暂无运行记录。</p>}
             </CardContent>
@@ -190,7 +194,7 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <Badge variant={source.variant}>{source.label}</Badge>
-                    <span className="truncate font-mono text-[10px] text-text-secondary">{backup.id}</span>
+                    <span className="truncate font-mono text-[11px] text-text-secondary">{backup.id}</span>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button size="sm" variant="ghost" disabled={validating || restore.isPending} onClick={() => validate.mutate(backup.id)}>
@@ -203,12 +207,12 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
                     </Button>
                   </div>
                 </div>
-                <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-text-tertiary">
+                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-text-tertiary">
                   <span>{new Date(backup.createdAt).toLocaleString()}</span>
                   <span>{formatBytes(backup.sizeBytes)}</span>
                 </div>
                 {validation && (
-                  <div className="mt-2 rounded-[10px] border border-border/45 bg-surface-tertiary/30 px-2.5 py-2 text-[10px] text-text-tertiary">
+                  <div className="mt-2 rounded-[10px] border border-border/45 bg-surface-tertiary/30 px-2.5 py-2 text-[11px] text-text-tertiary">
                     <div className="flex items-center justify-between gap-2">
                       <Badge variant={validation.valid ? "success" : "danger"}>{validation.valid ? "完整" : "异常"}</Badge>
                       <span>schema v{validation.schemaVersion ?? "?"} · {validation.quickCheck}</span>
@@ -219,9 +223,9 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
               </div>
             );
           })}
-          {backups.length > 8 && <p className="pt-3 text-center text-[10px] text-text-tertiary">仅显示最近 8 份，共 {backups.length} 份</p>}
+          {backups.length > 8 && <p className="pt-3 text-center text-[11px] text-text-tertiary">仅显示最近 8 份，共 {backups.length} 份</p>}
         </div>
-        <div className="mt-3 rounded-[12px] border border-warning/25 bg-warning/[0.045] px-3 py-2.5 text-[10px] leading-4 text-text-tertiary">
+        <div className="mt-3 rounded-[12px] border border-warning/25 bg-warning/[0.045] px-3 py-2.5 text-[11px] leading-4 text-text-tertiary">
           恢复属于破坏性操作：Core 会重新校验 SHA-256 / quick_check / schema，自动创建“恢复点”，关闭 SQLite 后原子替换，并由容器自动重启。恢复后的数据密码与配置以备份内容为准。
         </div>
       </CardContent>
@@ -245,7 +249,7 @@ function JobRow({ job, connectionName, onChanged }: { job: ScheduledJob; connect
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-text-primary">{jobLabel(job.type)}</p><Badge variant="muted">{connectionName}</Badge></div>
-          <p className="mt-0.5 font-mono text-[10px] text-text-tertiary">next {new Date(job.nextRunAt).toLocaleString()}</p>
+          <p className="mt-0.5 font-mono text-[11px] text-text-tertiary">next {new Date(job.nextRunAt).toLocaleString()}</p>
         </div>
         <Switch checked={job.enabled} onCheckedChange={(enabled) => update.mutate({ enabled })} />
       </div>
@@ -257,7 +261,7 @@ function JobRow({ job, connectionName, onChanged }: { job: ScheduledJob; connect
         </div>
         <Button size="sm" variant="ghost" disabled={run.isPending} onClick={() => run.mutate()}>{run.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}立即运行</Button>
       </div>
-      <p className="mt-2 text-[10px] text-text-tertiary">最小间隔 {minimum} 秒</p>
+      <p className="mt-2 text-[11px] text-text-tertiary">最小间隔 {minimum} 秒</p>
     </div>
   );
 }
