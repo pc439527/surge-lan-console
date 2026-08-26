@@ -23,7 +23,7 @@ export interface BuildInfo {
   environment: string;
 }
 
-export interface RuntimeBuildInfo extends BuildInfo {}
+export type RuntimeBuildInfo = BuildInfo;
 
 interface VersionJsonPayload {
   version?: unknown;
