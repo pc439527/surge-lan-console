@@ -31,6 +31,7 @@ ROUTES=(
 )
 
 mkdir -p "$OUT_DIR"
+overflow_failures=()
 
 for viewport in "${VIEWPORTS[@]}"; do
   IFS=x read -r width height <<< "$viewport"
@@ -48,8 +49,28 @@ for viewport in "${VIEWPORTS[@]}"; do
         --full-page \
         "${BASE_URL}${route}" \
         "$output"
+
+      # Chromium full-page screenshots expand to the document scroll width when
+      # a page leaks horizontally. That gives us a zero-dependency regression
+      # check for the exact mobile overflow that previously stretched Rules to
+      # 728px at a 390px viewport.
+      actual_width="$(file "$output" | sed -nE 's/.*PNG image data, ([0-9]+) x.*/\1/p')"
+      if [[ -z "$actual_width" ]]; then
+        echo "[visual-smoke] unable to read PNG width: $output" >&2
+        exit 1
+      fi
+      if (( actual_width > width )); then
+        overflow_failures+=("${name} ${viewport} ${theme}: screenshot width ${actual_width}px > viewport ${width}px")
+      fi
     done
   done
 done
 
-echo "[visual-smoke] wrote $(find "$OUT_DIR" -type f -name '*.png' | wc -l | tr -d ' ') screenshots to $OUT_DIR"
+count="$(find "$OUT_DIR" -type f -name '*.png' | wc -l | tr -d ' ')"
+echo "[visual-smoke] wrote ${count} screenshots to $OUT_DIR"
+
+if (( ${#overflow_failures[@]} > 0 )); then
+  echo "[visual-smoke] horizontal overflow detected:" >&2
+  printf '  - %s\n' "${overflow_failures[@]}" >&2
+  exit 1
+fi

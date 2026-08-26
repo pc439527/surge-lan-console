@@ -67,7 +67,7 @@ export function RulesPage() {
   const primaryType = topRuleTypes[0];
 
   return (
-    <div className="space-y-5 lg:space-y-6">
+    <div className="min-w-0 space-y-5 lg:space-y-6">
       <PageHeader
         eyebrow="Surge"
         title="规则"
@@ -87,8 +87,8 @@ export function RulesPage() {
             ]}
           />
 
-          <div className="content-panel rounded-[16px] p-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="content-panel min-w-0 overflow-hidden rounded-[16px] p-3">
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
                 <Input
@@ -99,7 +99,7 @@ export function RulesPage() {
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
-              <div className="scrollbar-none flex max-w-full gap-1.5 overflow-x-auto pb-0.5 lg:max-w-[62%]">
+              <div className="scrollbar-none flex w-full min-w-0 max-w-full gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 lg:w-auto lg:max-w-[62%]">
                 {TYPE_FILTERS.map((filter) => (
                   <button
                     key={filter}
@@ -121,7 +121,7 @@ export function RulesPage() {
                 ))}
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-text-tertiary">
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-text-tertiary">
               <span>显示 {filtered.length} / {totalRules}</span>
               {topRuleTypes.map(([type, count]) => (
                 <span key={type} className="font-mono">{type} {count}</span>
@@ -129,12 +129,12 @@ export function RulesPage() {
             </div>
           </div>
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>规则集</CardTitle>
               <span className="text-xs tabular-nums text-text-tertiary">{filtered.length} 条</span>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-w-0">
               {rulesQuery.isLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-10 w-full" />
@@ -152,7 +152,7 @@ export function RulesPage() {
               ) : filtered.length === 0 ? (
                 <DataEmpty title="没有匹配的规则" description="调整搜索词或类型筛选后重试。" compact />
               ) : (
-                <div className="overflow-x-auto">
+                <div className="max-w-full overflow-x-auto">
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b border-border">
