@@ -74,12 +74,12 @@ export function ScriptsPage() {
   const scriptsQuery = useQuery({
     queryKey: surgeKeys.scripts(connectionId),
     queryFn: () => surgeClient!.getScriptList(),
-    enabled: !!surgeClient,
+    enabled: !!surgeClient && !capUnsupported,
   });
 
   const apiEmpty =
     !scriptsQuery.isLoading && !scriptsQuery.isError && (scriptsQuery.data?.length ?? 0) === 0;
-  const needsProfileFallback = scriptsQuery.isError || apiEmpty;
+  const needsProfileFallback = capUnsupported || scriptsQuery.isError || apiEmpty;
   const profileScriptsQuery = useQuery({
     queryKey: surgeKeys.profile(connectionId),
     queryFn: async () => {
@@ -148,7 +148,7 @@ export function ScriptsPage() {
         description="查看 HTTP、规则、DNS、事件、cron 与通用脚本；支持 Cron 运行与沙箱评估。"
       />
 
-      {capUnsupported && scriptsQuery.isError && (
+      {capUnsupported && (
         <CapabilityNotice feature="scripts" api="/v1/scripting" />
       )}
 
