@@ -150,9 +150,9 @@ SQLite Backup
 
 ### 进行中 / 待收尾
 
-- [ ] **Tablet table density**：768px 级别平板优先保持紧凑表格；labelled-card reflow 收窄到真正手机宽度，避免 Node Quality 等页面变成超长卡片流。
+- [x] **Tablet table density**：768px 级别平板保持紧凑表格；通用 labelled-card reflow 已收窄到 620px 容器，仅真正手机宽度切换为卡片。
 - [ ] **Visual baseline / pixel diff**：当前 Visual Smoke 已能产出稳定截图并阻断横向溢出；选定视觉基线后再增加像素差阈值，避免在 UI 尚未最终收敛时制造高噪声 baseline churn。
-- [ ] **Secondary page coverage**：逐步扩展 Health / Modules / Scripts / Configuration 等页面的 deterministic visual coverage；Core-dependent 页面需要可控 fixture 后再纳入。
+- [x] **Secondary page coverage**：Visual Smoke 已扩展 Health / Modules / Scripts / Configuration；这些页面复用 deterministic MockSurgeClient，并与现有页面一起执行全 viewport / Light-Dark / 横向溢出门禁。
 
 ### Phase 16 验收原则
 

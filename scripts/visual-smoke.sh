@@ -27,7 +27,11 @@ ROUTES=(
   "traffic:/traffic"
   "dns:/dns"
   "rules:/rules"
+  "modules:/modules"
+  "scripts:/scripts"
+  "configuration:/configuration"
   "events:/events"
+  "health:/health"
 )
 
 mkdir -p "$OUT_DIR"
