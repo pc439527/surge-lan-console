@@ -26,13 +26,14 @@
 | Test | Vitest + Node Test Runner |
 | Local Core | Node.js 22.13+（内置 HTTP / Crypto / SQLite） |
 | Local DB | `node:sqlite`，SQLite WAL + migration |
-| E2E | Playwright（规划中，未启用） |
+| Visual QA | Playwright Chromium + deterministic Visual Smoke（CI 已启用） |
 
 ### 依赖原则
 
 - 优先使用项目已有依赖和 Node 标准库；不要仅为一个简单能力引入第三方包。
 - 新增依赖必须说明原因，并同步 `pnpm-lock.yaml`。
 - Local Core 使用 Node 内置 `http/https`、`crypto`、`dns`、`node:sqlite`，没有明确收益不得替换。
+- Visual Smoke 当前通过固定 Playwright CLI + Chromium 运行；不要为了截图任务再引入第二套浏览器测试框架。
 
 ## 2. 架构
 
@@ -66,12 +67,30 @@ Web → /api/surge/:connectionId/v1/* → Core → registered LAN Surge → X-Ke
 
 ## 4. 设计约束
 
+### 4.1 文档优先级
+
+涉及 UI / Layout / Typography 冲突时，DeepSeek Harness 按以下顺序执行：
+
+1. `DESIGN_SYSTEM.md` — 当前实现规范，最高优先级；
+2. `docs/APPLE_HIG_2026_AUDIT.md` — Apple HIG 审计与可访问性约束；
+3. `PROJECT_SPEC.md` — 产品/页面需求；
+4. `docs/OPTIMIZATION_PLAN.md` — 历史优化记录，仅作背景，不得覆盖当前 Design System。
+
+本文件中的安全、架构、数据约束始终属于硬性规则，不受上述 UI 文档优先级影响。
+
+### 4.2 UI 硬性规则
+
 - 遵循 `DESIGN_SYSTEM.md`；Liquid Glass 只用于导航和控制层，内容区使用 Content Material。
 - 禁止 glass-on-glass。
 - Light / Dark / System 必须完整支持语义 Token。
 - 禁止 Feature 组件硬编码主题颜色。
 - 图标统一 Lucide，单色；不用 emoji 作为功能图标。
 - 数据密码页不允许“跳过/稍后设置”。
+- 页面内容区统一使用共享 `AppLayout` / `page-container` 宽度合同；不得为单个页面重新引入独立 max-width 桶。
+- 普通页面标题使用共享 `PageHeader`；Dashboard 的特殊 Hero 若调整，应提炼共享变体，禁止重新出现顶部标题与页面标题重复。
+- 新业务 UI 默认字号不得低于 11px；正文/表格优先使用 Design System 中的 12–14px 层级，避免为了“塞下内容”使用 10px。
+- 手机端密集表格必须 reflow 为 Card/List；平板端应优先保留紧凑表格，不得把 768px 级别页面无条件展开成超长卡片流。
+- coarse pointer 交互目标不得小于 44×44px。
 
 ## 5. 数据与安全
 
@@ -94,7 +113,7 @@ Web → /api/surge/:connectionId/v1/* → Core → registered LAN Surge → X-Ke
 - `data/` 必须 Git ignored。
 - Schema 变更只能通过 migration，禁止 DROP/重建用户数据表。
 - 使用 WAL。
-- Phase 15 备份必须使用 SQLite 安全快照/一致性机制；禁止直接复制活跃 DB + WAL 冒充可靠备份。
+- Phase 15+ 备份必须使用 SQLite 安全快照/一致性机制；禁止直接复制活跃 DB + WAL 冒充可靠备份。
 - Secret 表只能存 ciphertext / iv / auth tag。
 
 ### 5.3 Browser Storage
@@ -130,7 +149,7 @@ Phase 12 后：
 
 - Scheduler 必须运行在 Core，禁止依赖 browser timer。
 - `scheduled_jobs` 是配置 Source of Truth；每次运行写 `job_runs`。
-- Collector 数据写 `collector_samples`，Phase 15 再做聚合/Retention。
+- Collector 数据写 `collector_samples`，Phase 15+ 继续复用该链路做聚合/Retention。
 - 最小安全间隔必须由 Core 强制，不能只靠 UI。
 - 关闭浏览器不停止任务；Immediate Lock / Core Restart 会停止受保护任务直到重新解锁。
 - Job failure / recovery 通过 Event Bus 进入通知引擎。
@@ -140,12 +159,14 @@ Phase 12 后：
 - Surge：统一 `SurgeError` taxonomy。
 - Core：统一 `CoreApiError`，React 不直接显示 AxiosError。
 - 每个页面必须有 Loading / Empty / Error 或明确可恢复状态。
+- 平台 API 明确 `unsupported` 时应显示 N/A / 不支持，不得误判为故障，也不得继续产生可避免的 404 请求。
+- Availability 与 Performance 必须分开表达；接口可用但延迟过高应是性能警告，不应伪装成“全部正常”或“不可用”。
 - 破坏性操作需要确认。
 
 ## 10. DeepSeek Harness 开发流程
 
-- 当前开发阶段：**Phase 15**；不要倒退重新把 Secret 放回浏览器。
-- 开发前先读 `ROADMAP.md`、本文件和相关 Feature。
+- 当前开发阶段：**Phase 16 — Real-device Correctness / UX Hardening / Visual QA**；不要倒退重新把 Secret 放回浏览器，也不要在当前阶段无必要扩张新功能面。
+- 开发前先读 `ROADMAP.md`、本文件、`DESIGN_SYSTEM.md` 和相关 Feature。
 - 代码保持 TypeScript strict。
 - 正常完成任务前应执行：
 
@@ -157,7 +178,10 @@ pnpm build
 pnpm verify
 ```
 
-- 涉及前端/部署后正常应重建 Docker Compose 并验证真实页面。
+- 涉及前端布局/样式的变更，除 `pnpm verify` 外必须通过 `.github/workflows/visual-smoke.yml`。
+- Visual Smoke 使用 `pnpm build:visual` 的 deterministic MockSurgeClient，当前矩阵覆盖 1920×1080、1440×900、1366×768、768×1024、430×932、390×844 的 Light / Dark，并包含横向 viewport overflow 门禁。
+- Visual Smoke 是布局/渲染门禁，不等于真实 Surge 设备 API 验收；涉及 API semantics 的任务仍需保留 raw fixture / unit test，并在可用时用真实设备响应验证。
+- 涉及前端/部署后正常应重建 Docker Compose 并验证真实页面；构建版本应能通过 `/version.json` 与 UI Build Info 对照。
 - 如果用户明确要求跳过某个门禁，本次任务按用户指令执行，但最终必须准确说明哪些验证未执行。
 - 不要修改与当前任务无关的代码。
 
@@ -172,4 +196,6 @@ pnpm verify
 7. Background automation belongs to Core。
 8. Core unavailable fail closed。
 9. Secret only decrypted inside Core。
-10. Phase 15 继续基于 `collector_samples/job_runs/notification_history` 做 Analytics，不另起重复数据链路。
+10. Phase 16 继续复用 `collector_samples/job_runs/notification_history` 与 Phase 15 Analytics 数据链路，不另起重复数据链路。
+11. Responsive 修复优先解决根因并增加可执行门禁，不用 `overflow-x:hidden` 掩盖页面被撑宽。
+12. CI 通过不等于视觉验收完成；涉及布局时必须检查对应 Visual Smoke 目标 viewport。
