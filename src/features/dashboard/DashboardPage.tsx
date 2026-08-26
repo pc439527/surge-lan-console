@@ -371,7 +371,7 @@ export function DashboardPage() {
                   </Badge>
                   <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{evt.message}</span>
                 </div>
-              ))}
+              ))
             )}
           </CardContent>
         </Card>
