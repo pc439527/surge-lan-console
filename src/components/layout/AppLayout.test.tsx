@@ -24,7 +24,7 @@ describe("AppLayout", () => {
 
   it("renders sidebar navigation groups", () => {
     renderLayout();
-    // Brand appears in the desktop sidebar and the mobile top bar.
+    // Brand appears in the desktop sidebar and the top bar.
     expect(screen.getAllByText("Surge LAN Console").length).toBeGreaterThan(0);
     // Items appear in both sidebar and mobile nav
     expect(screen.getAllByText("仪表盘").length).toBeGreaterThan(0);
@@ -36,6 +36,14 @@ describe("AppLayout", () => {
   it("renders mobile bottom navigation", () => {
     renderLayout();
     expect(screen.getByLabelText("移动端导航")).toBeInTheDocument();
+  });
+
+  it("uses the shared page width and keeps route titles out of the top bar", () => {
+    const { container } = renderLayout();
+    expect(container.querySelector("main")).toHaveClass("max-w-[1600px]");
+    const topBar = container.querySelector("header.topbar-glass");
+    expect(topBar).toHaveTextContent("Surge LAN Console");
+    expect(topBar).not.toHaveTextContent("仪表盘");
   });
 
   it("switches active connection", async () => {
