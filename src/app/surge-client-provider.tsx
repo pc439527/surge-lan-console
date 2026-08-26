@@ -5,18 +5,26 @@ import { buildClientFor, useConnectionStore } from "@/stores/connection-store";
 import { usePreferencesStore } from "@/stores/preferences-store";
 import { SurgeClientContext, type SurgeClientContextValue } from "./surge-client-context";
 
+/**
+ * Vite's dedicated `visual` mode is used only by CI screenshot smoke tests.
+ * It forces the deterministic in-memory Surge client without persisting or
+ * mutating the user's normal demo-mode preference.
+ */
+const visualMode = import.meta.env.MODE === "visual";
+
 export function SurgeClientProvider({ children }: PropsWithChildren) {
   const connections = useConnectionStore((s) => s.connections);
   const activeId = useConnectionStore((s) => s.activeConnectionId);
   const hydrate = useConnectionStore((s) => s.hydrate);
   const demoMode = usePreferencesStore((s) => s.demoMode);
+  const useMockClient = demoMode || visualMode;
 
   useEffect(() => {
-    if (!demoMode) void hydrate();
-  }, [demoMode, hydrate]);
+    if (!useMockClient) void hydrate();
+  }, [useMockClient, hydrate]);
 
   const value = useMemo<SurgeClientContextValue>(() => {
-    if (demoMode) {
+    if (useMockClient) {
       return {
         connectionId: null,
         connection: null,
@@ -35,7 +43,7 @@ export function SurgeClientProvider({ children }: PropsWithChildren) {
       missingKey: !built,
       demoMode: false,
     };
-  }, [connections, activeId, demoMode]);
+  }, [connections, activeId, useMockClient]);
 
   return <SurgeClientContext.Provider value={value}>{children}</SurgeClientContext.Provider>;
 }
