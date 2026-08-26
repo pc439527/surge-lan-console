@@ -20,7 +20,8 @@ const dotClass: Record<MetricStripTone, string> = {
 
 /**
  * Compact summary surface used instead of a row of equal-weight metric cards.
- * Two columns on mobile, four columns from md upward.
+ * Two columns on phone-sized layouts, four columns from md upward. Extremely
+ * narrow embedded containers may still collapse to one column in responsive.css.
  */
 export function MetricStrip({ items, className }: { items: MetricStripItem[]; className?: string }) {
   return (
@@ -43,11 +44,11 @@ export function MetricStrip({ items, className }: { items: MetricStripItem[]; cl
                 <span className={cn("h-1.5 w-1.5 shrink-0 rounded-pill", dotClass[tone])} />
                 <span className="truncate">{item.label}</span>
               </div>
-              <div className="mt-1.5 truncate text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-text-primary sm:text-[24px]">
+              <div className="mt-1.5 min-w-0 break-words text-[20px] font-semibold leading-tight tracking-[-0.025em] tabular-nums text-text-primary sm:text-[24px]">
                 {item.value}
               </div>
               {item.detail && (
-                <div className="mt-1 truncate text-xs text-text-tertiary">{item.detail}</div>
+                <div className="mt-1 min-w-0 break-words text-xs leading-5 text-text-tertiary">{item.detail}</div>
               )}
             </div>
           );
