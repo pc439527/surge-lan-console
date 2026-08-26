@@ -6,6 +6,8 @@ export interface NodeQuality {
   name: string;
   groups: string[];
   latencyMs: number | null;
+  /** True when Surge returned a test result for this node, including failed tests. */
+  tested: boolean;
   reachable: boolean;
   score: number | null;
   typeDescription: string;
@@ -52,12 +54,14 @@ export function nodeQuality(
   options: NodeIdentityOptions = {},
 ): NodeQuality {
   const latencyMs = entry ? policyLatencyMs(entry) : null;
+  const tested = entry !== undefined;
   const reachable = entry?.ok === true;
   return {
     id: nodeIdentity(name, options),
     name,
     groups: [group],
     latencyMs,
+    tested,
     reachable,
     score: scoreForLatency(latencyMs),
     typeDescription: options.typeDescription ?? "",
@@ -94,12 +98,24 @@ export function dedupeNodeQualities(rows: NodeQuality[]): NodeQuality[] {
       ...first,
       groups,
       latencyMs,
+      tested: bucket.some((row) => row.tested),
       reachable: bucket.some((row) => row.reachable),
       score: scoreForLatency(latencyMs),
     };
   });
 }
 
+function rankBucket(row: NodeQuality): number {
+  if (row.latencyMs !== null) return 0;
+  if (row.tested) return 1;
+  return 2;
+}
+
 export function rankNodes(rows: NodeQuality[]): NodeQuality[] {
-  return [...rows].sort((a, b) => (a.latencyMs ?? Number.POSITIVE_INFINITY) - (b.latencyMs ?? Number.POSITIVE_INFINITY));
+  return [...rows].sort((a, b) => {
+    const bucketDiff = rankBucket(a) - rankBucket(b);
+    if (bucketDiff !== 0) return bucketDiff;
+    if (a.latencyMs !== null && b.latencyMs !== null) return a.latencyMs - b.latencyMs;
+    return a.name.localeCompare(b.name);
+  });
 }

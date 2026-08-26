@@ -1,4 +1,4 @@
-import { Activity, ArrowDown, ArrowUp, Clock3, RefreshCw, Router, ShieldAlert } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Clock3, Gauge, RefreshCw, Router, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -70,7 +70,7 @@ export function FleetPage() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-[15px] font-semibold text-text-primary">设备</h2>
-                <p className="mt-0.5 text-xs text-text-tertiary">当前设备使用 Accent 标识；离线或缺少密钥的设备保留明确原因。</p>
+                <p className="mt-0.5 text-xs text-text-tertiary">API RTT 表示轻量探针往返耗时；快照耗时表示模式、流量和请求数据整组刷新耗时。</p>
               </div>
               <span className="text-xs tabular-nums text-text-tertiary">{connections.length} 台</span>
             </div>
@@ -81,10 +81,10 @@ export function FleetPage() {
                 const snapshot = query.data;
                 const isActive = connection.id === activeId;
 
-                if (query.isLoading) return <Skeleton key={connection.id} className="h-56 w-full rounded-[18px]" />;
+                if (query.isLoading) return <Skeleton key={connection.id} className="h-64 w-full rounded-[18px]" />;
 
                 return (
-                  <Card key={connection.id} className={cn("relative overflow-hidden", isActive && "border-accent/35")}> 
+                  <Card key={connection.id} className={cn("relative overflow-hidden", isActive && "border-accent/35")}>
                     {isActive && <span className="absolute inset-y-5 left-0 w-[3px] rounded-r-pill bg-accent" />}
                     <CardContent className="space-y-4 p-5">
                       <div className="flex items-start justify-between gap-3">
@@ -101,11 +101,13 @@ export function FleetPage() {
                       </div>
 
                       {snapshot?.status === "online" ? (
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-border/55 py-4">
-                          <Metric icon={Clock3} label="响应" value={`${snapshot.latencyMs}ms`} />
+                        <div className="grid grid-cols-2 gap-x-5 gap-y-4 border-y border-border/55 py-4 sm:grid-cols-3">
+                          <Metric icon={Gauge} label="API RTT" value={formatLatency(snapshot.apiLatencyMs)} />
+                          <Metric icon={Clock3} label="快照耗时" value={formatLatency(snapshot.snapshotDurationMs)} />
                           <Metric icon={Activity} label="活动请求" value={String(snapshot.activeRequests)} />
                           <Metric icon={ArrowDown} label="下载" value={formatRate(snapshot.traffic?.downloadRate ?? 0)} />
                           <Metric icon={ArrowUp} label="上传" value={formatRate(snapshot.traffic?.uploadRate ?? 0)} />
+                          <Metric icon={Router} label="出站模式" value={snapshot.outboundMode?.toUpperCase() ?? "—"} />
                         </div>
                       ) : (
                         <div className="flex min-h-20 items-start gap-3 border-y border-border/55 py-4">
@@ -119,13 +121,16 @@ export function FleetPage() {
                                 ? "当前浏览器会话中没有此设备的 API Key。"
                                 : snapshot?.errorMessage ?? "设备暂时不可达。"}
                             </p>
+                            {snapshot?.apiLatencyMs !== null && snapshot?.apiLatencyMs !== undefined && (
+                              <p className="mt-1 font-mono text-xs text-text-tertiary">API RTT {snapshot.apiLatencyMs}ms</p>
+                            )}
                           </div>
                         </div>
                       )}
 
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-xs text-text-tertiary">
-                          {snapshot?.outboundMode ? `模式 ${snapshot.outboundMode.toUpperCase()}` : "未获取模式"}
+                          {snapshot?.checkedAt ? `更新 ${new Date(snapshot.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "尚未刷新"}
                         </span>
                         <Button size="sm" variant={isActive ? "secondary" : "ghost"} onClick={() => openDevice(connection.id)}>
                           {isActive ? "当前设备" : "打开设备"}
@@ -141,6 +146,10 @@ export function FleetPage() {
       )}
     </div>
   );
+}
+
+function formatLatency(value: number | null): string {
+  return value === null ? "—" : `${value}ms`;
 }
 
 function StatusBadge({ snapshot }: { snapshot?: FleetDeviceSnapshot }) {
