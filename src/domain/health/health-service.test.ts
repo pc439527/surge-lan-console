@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { healthFromCapability, healthStatusFromCapability, summarizeHealth } from "./health-service";
+import { healthFromCapability, healthStatusFromCapability, summarizeHealth, SLOW_ENDPOINT_MS } from "./health-service";
 import type { CapabilityReport } from "@/api/capability";
 
 describe("health domain (P0-4)", () => {
@@ -73,5 +73,58 @@ describe("health domain (P0-4)", () => {
     expect(rules?.latencyMs).toBe(14);
     // Overall: an N/A check must NOT downgrade the result.
     expect(summary.status).toBe("healthy");
+  });
+
+  it("marks a supported but very slow endpoint as warning", () => {
+    const slow = SLOW_ENDPOINT_MS + 250;
+    const report: CapabilityReport = {
+      platform: "tvos",
+      platformDetected: true,
+      latencyMs: 15,
+      probedAt: 4567,
+      probes: {
+        "/v1/dns": { endpoint: "/v1/dns", status: "supported", latencyMs: slow },
+      },
+      features: {
+        traffic: "supported",
+        requests: "supported",
+        policies: "supported",
+        dns: "supported",
+        rules: "supported",
+        modules: "unsupported",
+        scripts: "supported",
+        events: "supported",
+      },
+    };
+
+    const summary = healthFromCapability(report);
+    const dns = summary.checks.find((check) => check.id === "dns");
+    expect(dns?.status).toBe("warning");
+    expect(dns?.detail).toContain("响应较慢");
+    expect(summary.status).toBe("warning");
+  });
+
+  it("marks the base API probe as warning when latency crosses the threshold", () => {
+    const report: CapabilityReport = {
+      platform: "unknown",
+      platformDetected: true,
+      latencyMs: SLOW_ENDPOINT_MS + 1,
+      probedAt: 7890,
+      probes: {},
+      features: {
+        traffic: "unknown",
+        requests: "unknown",
+        policies: "unknown",
+        dns: "unknown",
+        rules: "unknown",
+        modules: "unknown",
+        scripts: "unknown",
+        events: "unknown",
+      },
+    };
+
+    const summary = healthFromCapability(report);
+    expect(summary.checks.find((check) => check.id === "api")?.status).toBe("warning");
+    expect(summary.status).toBe("warning");
   });
 });
