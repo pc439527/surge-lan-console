@@ -1,6 +1,6 @@
 # Surge LAN Console — 开发路线图（Roadmap）
 
-> DeepSeek Harness 按 Phase 顺序开发。Phase 11–15 已完成 Local Core、持久化、通知、后台采集、Analytics、Backup / Restore 与 Config History 基础闭环。
+> DeepSeek Harness 按 Phase 顺序开发。Phase 11–15 已完成 Local Core、持久化、通知、后台采集、Analytics、Backup / Restore 与 Config History 基础闭环；当前进入 Phase 16，重点由“继续堆功能”转向真实设备正确性、状态语义、响应式一致性与可执行视觉门禁。
 
 ---
 
@@ -129,6 +129,43 @@ SQLite Backup
 
 ---
 
+## Phase 16 — Real-device Correctness + UX Hardening + Visual QA（进行中）
+
+### 已完成
+
+- [x] **DNS Raw Unit Calibration**：统一 DNS cache `timeCost` 到毫秒语义；兼容 epoch 秒 / epoch 毫秒 / TTL 秒，不再把实机小数秒误显示为 `0.014ms` 或错误“已过期”。
+- [x] **Capability-aware Scripts**：平台明确不支持 `/v1/scripting` 时不再制造重复 404，直接回退解析当前配置 `[Script]`。
+- [x] **Health Semantics**：Availability 与 Performance 分离；可访问但高延迟端点显示性能警告，`unsupported` 保持 N/A。
+- [x] **Notification / Automation IA**：通知历史、规则、任务运行记录限制默认展示量并改内部滚动，避免无限拉长主页面。
+- [x] **Dashboard Capability Health**：Dashboard 不再用任意业务 query success 猜测全局 API 正常；改用 Capability Probe 表达真实端点状态。
+- [x] **Fleet Latency Semantics**：设备总览区分轻量 `API RTT` 与并行请求的“快照耗时”。
+- [x] **Node Quality Browsing**：增加全部 / 已测速 / 未测速 / 不可达筛选、搜索、排序和正确的可达率分母；移动端使用 Card/List。
+- [x] **Unified Page Width / Header**：共享 `page-container` 统一为 1600px 宽度合同；PageHeader 收敛到 Design System 26px；桌面顶栏不再重复产品品牌/页面标题。
+- [x] **Visual Smoke Foundation**：deterministic visual build + Playwright Chromium，覆盖 Dashboard / Policies / Node Quality / Requests / Traffic / DNS / Rules / Events。
+- [x] **Viewport Matrix**：1920×1080、1440×900、1366×768、768×1024、430×932、390×844 × Light / Dark，共 96 张截图。
+- [x] **Horizontal Overflow Guard**：每张 full-page PNG 必须与请求 viewport 同宽；页面被 intrinsic-width 撑宽时 CI 直接失败。
+- [x] **Rules Mobile Overflow**：修复手机端筛选条把 390px 页面撑宽到约 728px 的问题；底部导航 Material 同步加强，内容不再明显透出。
+- [x] **Compact Phone Metrics**：390 / 430 手机 MetricStrip 保持 2×2，仅极窄 `<360px` 容器退化为单列，避免统计区异常拉长。
+- [x] **Runtime Build Refresh**：页面轮询 no-cache `/version.json`；服务器部署版本与当前 tab bundle 不一致时提示刷新并请求 Service Worker 更新，避免长期开着旧 UI/build hash。
+
+### 进行中 / 待收尾
+
+- [ ] **Tablet table density**：768px 级别平板优先保持紧凑表格；labelled-card reflow 收窄到真正手机宽度，避免 Node Quality 等页面变成超长卡片流。
+- [ ] **Visual baseline / pixel diff**：当前 Visual Smoke 已能产出稳定截图并阻断横向溢出；选定视觉基线后再增加像素差阈值，避免在 UI 尚未最终收敛时制造高噪声 baseline churn。
+- [ ] **Secondary page coverage**：逐步扩展 Health / Modules / Scripts / Configuration 等页面的 deterministic visual coverage；Core-dependent 页面需要可控 fixture 后再纳入。
+
+### Phase 16 验收原则
+
+- API 单位/状态必须以 raw response fixture、normalizer 和测试为依据，不靠 UI 猜测；
+- `unsupported` ≠ `error`，慢 ≠ 不可用；
+- 桌面 / 平板 / 手机根据实际 content width reflow，不根据单个页面自行定义宽度；
+- 手机密集表格必须 Card/List 化，但 768px 级别平板不应无条件展开为超长卡片流；
+- Light / Dark、390 / 430、768、1366、1440、1920 的布局变更必须经过 Visual Smoke；
+- CI 绿灯不等于视觉验收完成，必须检查变更涉及的目标截图；
+- 修复 overflow 应解决 intrinsic-width 根因并增加门禁，禁止只用全局 `overflow-x:hidden` 掩盖问题。
+
+---
+
 ## 版本里程碑
 
 | 版本 | 对应范围 | 状态 |
@@ -141,5 +178,6 @@ SQLite Backup
 | Notification / Bark | Phase 13 | 已完成基础实现 |
 | Scheduler / Collector | Phase 14 | 已完成基础实现 |
 | V2 Analytics / Backup | Phase 15 | 已完成 |
+| Phase 16 | Correctness / UX / Visual QA | 进行中 |
 
-> 原则：Secret 只在 Core 内解密；业务模块发布 Event，不直接调用 Bark；后台采集与调度不依赖浏览器常驻。
+> 原则：Secret 只在 Core 内解密；业务模块发布 Event，不直接调用 Bark；后台采集与调度不依赖浏览器常驻；当前迭代优先修正确性和交互一致性，不新增重复数据链路。
