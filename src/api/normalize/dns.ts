@@ -4,10 +4,12 @@ import type { DnsCacheEntry, DnsLocalEntry } from "@/api/types";
 /**
  * /v1/dns normalizer (OPTIMIZATION_PLAN Task 06, §20–24).
  *
- * Handles the known platform differences:
+ * Known platform differences:
  *   - dnsCache entries may be missing fields (tvOS builds)
- *   - expiresTime may be epoch-seconds, epoch-ms, TTL-seconds or absent —
- *     the UI decides how to render it, we only keep the raw value.
+ *   - timeCost is commonly exposed as seconds on tvOS/macOS, while some
+ *     builds return millisecond-like values; normalize it to milliseconds.
+ *   - expiresTime may be epoch-seconds, epoch-ms, TTL-seconds or absent;
+ *     normalize recognized values to an absolute epoch-millisecond timestamp.
  *   - local records may be absent entirely.
  *
  * Unknown ≠ empty: a response without dnsCache/local keys is a parse error,
@@ -17,6 +19,10 @@ export interface NormalizedDns {
   dnsCache: DnsCacheEntry[];
   local: DnsLocalEntry[];
 }
+
+const EPOCH_SECONDS_MIN = 1_000_000_000;
+const EPOCH_MILLISECONDS_MIN = 1_000_000_000_000;
+const MAX_RELATIVE_TTL_SECONDS = 31 * 24 * 60 * 60;
 
 export function normalizeDns(raw: unknown): NormalizedDns {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -34,6 +40,34 @@ export function normalizeDns(raw: unknown): NormalizedDns {
   };
 }
 
+/**
+ * Convert Surge DNS query duration into milliseconds.
+ *
+ * Real-device captures commonly expose sub-second values such as 0.014217,
+ * which represent seconds (14.217ms). Integer / larger values are preserved as
+ * milliseconds to stay compatible with builds that already expose ms.
+ */
+export function normalizeDnsTimeCost(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  return value > 0 && value < 1 ? value * 1000 : value;
+}
+
+/**
+ * Convert a recognized Surge expiry representation to epoch milliseconds.
+ * Unknown / ambiguous values are discarded instead of being rendered as an
+ * incorrect "expired" state.
+ */
+export function normalizeDnsExpiry(value: unknown, nowMs: number = Date.now()): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+
+  if (value >= EPOCH_MILLISECONDS_MIN) return value;
+  if (value >= EPOCH_SECONDS_MIN) return value * 1000;
+
+  if (value <= MAX_RELATIVE_TTL_SECONDS) return nowMs + value * 1000;
+
+  return undefined;
+}
+
 function normalizeCacheEntries(raw: unknown): DnsCacheEntry[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
@@ -46,8 +80,8 @@ function normalizeCacheEntries(raw: unknown): DnsCacheEntry[] {
       data: Array.isArray(e?.data) ? e.data.map(String) : [],
       server: typeof e?.server === "string" ? e.server : undefined,
       path: typeof e?.path === "string" ? e.path : undefined,
-      timeCost: typeof e?.timeCost === "number" ? e.timeCost : undefined,
-      expiresTime: typeof e?.expiresTime === "number" ? e.expiresTime : undefined,
+      timeCost: normalizeDnsTimeCost(e?.timeCost),
+      expiresTime: normalizeDnsExpiry(e?.expiresTime),
       raw: e,
     };
   });
