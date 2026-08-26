@@ -4,7 +4,10 @@ export type FleetDeviceStatus = "online" | "offline" | "missing-key";
 
 export interface FleetDeviceSnapshot {
   status: FleetDeviceStatus;
-  latencyMs: number | null;
+  /** Lightweight /v1/outbound round-trip latency from testConnection(). */
+  apiLatencyMs: number | null;
+  /** Total time to assemble outbound + traffic + active request snapshot. */
+  snapshotDurationMs: number | null;
   outboundMode: OutboundMode | null;
   traffic: TrafficSummary | null;
   activeRequests: number;
