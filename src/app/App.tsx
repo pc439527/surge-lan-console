@@ -15,10 +15,10 @@ export default function App() {
       <AuthGate>
         <SurgeClientProvider>
           <RouterProvider router={router} />
-          <Toaster />
-          <BuildUpdateNotice />
         </SurgeClientProvider>
       </AuthGate>
+      <Toaster />
+      <BuildUpdateNotice />
     </Providers>
   );
 }
