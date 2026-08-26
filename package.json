@@ -12,6 +12,7 @@
     "core:start": "node server/dist/index.js",
     "core:dev": "pnpm core:build && pnpm core:start",
     "build:web": "tsc --noEmit && vite build",
+    "build:visual": "tsc --noEmit && vite build --mode visual",
     "build": "pnpm build:web && pnpm core:build",
     "preview": "vite preview",
     "typecheck:web": "tsc --noEmit",
