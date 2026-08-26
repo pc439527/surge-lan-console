@@ -23,10 +23,10 @@ import {
 } from "./dashboard-queries";
 import { useFeaturesQuery, useOutboundModeQuery } from "@/features/shared/queries";
 import { useGroupSelectionsQuery } from "@/features/policies/policies-queries";
-import { surgeKeys } from "@/lib/surge-keys";
 import { coreApi } from "@/lib/core-api";
 import { OutboundModeControl } from "./OutboundModeControl";
 import type { DisplayEvent } from "./dashboard-queries";
+import { buildDashboardHealth, type DashboardHealthTone } from "./dashboard-health";
 
 /**
  * Dashboard V2 — Apple HIG 2026 / macOS 27 inspired web-console layout.
@@ -91,14 +91,6 @@ export function DashboardPage() {
   const selections = useGroupSelectionsQuery(dashboardGroupNames);
   const outboundModeQuery = useOutboundModeQuery();
 
-  const dnsQuery = useQuery({
-    queryKey: surgeKeys.dns(connectionId),
-    queryFn: ({ signal }) => client!.getDnsCache(signal),
-    enabled: !!client && !missingKey,
-    staleTime: 60_000,
-    refetchInterval: false,
-  });
-
   const trafficHistory = useQuery({
     queryKey: ["core", "traffic-analytics", connectionId, "24h"],
     queryFn: () => coreApi.getTrafficAnalytics(connectionId!, "24h"),
@@ -147,15 +139,10 @@ export function DashboardPage() {
   const uptimeMs = traffic.data?.startTime
     ? Date.now() - (normalizeEpoch(traffic.data.startTime) ?? Date.now())
     : undefined;
-  const apiHealthy = traffic.isSuccess || groups.isSuccess;
-  const healthItems = [
-    { label: "API", healthy: apiHealthy },
-    { label: "DNS", healthy: dnsQuery.isSuccess },
-    { label: "Proxy", healthy: outboundModeQuery.isSuccess },
-    { label: "节点", healthy: groups.isSuccess && (groups.data?.length ?? 0) > 0 },
-  ];
-  const healthyCount = healthItems.filter((item) => item.healthy).length;
-  const healthLabel = healthyCount === healthItems.length ? "运行正常" : healthyCount >= 2 ? "部分服务异常" : "需要检查";
+  const dashboardHealth = buildDashboardHealth(capability.data);
+  const healthItems = dashboardHealth.items;
+  const apiItem = healthItems[0]!;
+  const dnsItem = healthItems.find((item) => item.key === "dns")!;
 
   return (
     <div className="space-y-5 lg:space-y-6">
@@ -163,7 +150,7 @@ export function DashboardPage() {
         <div className="relative z-[1] flex flex-col justify-between gap-5 xl:flex-row xl:items-center">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
-              <span className={apiHealthy ? "h-2 w-2 rounded-pill bg-success" : "h-2 w-2 rounded-pill bg-danger"} />
+              <span className={`h-2 w-2 rounded-pill ${healthDotClass(dashboardHealth.tone)}`} />
               实时控制台
             </div>
             <h1 className="mt-2 text-[30px] font-semibold tracking-[-0.035em] text-text-primary sm:text-[34px]">Surge 概览</h1>
@@ -191,10 +178,9 @@ export function DashboardPage() {
             {capability.data ? PLATFORM_LABEL[capability.data.platform] : "平台探测中…"}
             {capability.data && !capability.data.platformDetected && <span className="text-[11px] text-text-tertiary"> · 手动指定</span>}
           </Badge>
-          <Badge variant={apiHealthy ? "success" : "danger"}>{apiHealthy ? "API 正常" : "API 不可用"}</Badge>
-          {healthItems.slice(1).map((item) => (
-            <Badge key={item.label} variant={item.healthy ? "success" : "danger"}>
-              {item.label} · {item.healthy ? "正常" : "异常"}
+          {healthItems.map((item) => (
+            <Badge key={item.key} variant={item.tone}>
+              {item.label} · {item.text}
             </Badge>
           ))}
           {demoMode && <Badge variant="warning">DEMO</Badge>}
@@ -241,20 +227,20 @@ export function DashboardPage() {
         <Card className="min-w-0 xl:col-span-4">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
-              <span className={healthyCount === healthItems.length ? "flex h-10 w-10 items-center justify-center rounded-pill bg-success/12 text-success" : "flex h-10 w-10 items-center justify-center rounded-pill bg-warning/12 text-warning"}>
+              <span className={`flex h-10 w-10 items-center justify-center rounded-pill ${healthIconClass(dashboardHealth.tone)}`}>
                 <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
               </span>
               <div>
                 <p className="text-xs font-medium text-text-tertiary">运行状态</p>
-                <CardTitle className="mt-0.5 text-[17px]">{healthLabel}</CardTitle>
+                <CardTitle className="mt-0.5 text-[17px]">{dashboardHealth.label}</CardTitle>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-2.5">
             <div className="mb-3 flex flex-wrap gap-1.5 border-b border-border/60 pb-3">
               {healthItems.map((item) => (
-                <Badge key={item.label} variant={item.healthy ? "success" : "danger"}>
-                  {item.label} · {item.healthy ? "OK" : "异常"}
+                <Badge key={item.key} variant={item.tone}>
+                  {item.label} · {item.text}
                 </Badge>
               ))}
             </div>
@@ -264,12 +250,8 @@ export function DashboardPage() {
               value={capability.data ? PLATFORM_LABEL[capability.data.platform] : "探测中…"}
               tone={capability.data && capability.data.platform !== "unknown" ? "success" : "muted"}
             />
-            <StatusRow label="API" value={apiHealthy ? "正常" : "不可用"} tone={apiHealthy ? "success" : "danger"} />
-            <StatusRow
-              label="DNS API"
-              value={dnsQuery.isSuccess ? "可用" : dnsQuery.isError ? "不可用" : "—"}
-              tone={dnsQuery.isSuccess ? "success" : dnsQuery.isError ? "danger" : "muted"}
-            />
+            <StatusRow label="API" value={apiItem.text} tone={apiItem.tone} />
+            <StatusRow label="DNS API" value={dnsItem.text} tone={dnsItem.tone} />
             {featureRows.map((row) => {
               const enabled = features.data?.[row.key];
               return (
@@ -389,7 +371,7 @@ export function DashboardPage() {
                   </Badge>
                   <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{evt.message}</span>
                 </div>
-              ))
+              ))}
             )}
           </CardContent>
         </Card>
@@ -405,8 +387,9 @@ const featureRows = [
   { key: "capture" as const, label: "Capture" },
 ];
 
-function StatusRow({ label, value, tone, mono }: { label: string; value: string; tone?: "success" | "danger" | "muted"; mono?: boolean }) {
+function StatusRow({ label, value, tone, mono }: { label: string; value: string; tone?: "success" | "warning" | "danger" | "muted"; mono?: boolean }) {
   const badge = tone === "success" ? <Badge variant="success">{value}</Badge>
+    : tone === "warning" ? <Badge variant="warning">{value}</Badge>
     : tone === "danger" ? <Badge variant="danger">{value}</Badge>
     : <span className={`text-[13px] text-text-secondary ${mono ? "font-mono text-xs" : ""}`}>{value}</span>;
   return (
@@ -415,6 +398,20 @@ function StatusRow({ label, value, tone, mono }: { label: string; value: string;
       {badge}
     </div>
   );
+}
+
+function healthDotClass(tone: DashboardHealthTone): string {
+  if (tone === "success") return "bg-success";
+  if (tone === "warning") return "bg-warning";
+  if (tone === "danger") return "bg-danger";
+  return "bg-text-tertiary";
+}
+
+function healthIconClass(tone: DashboardHealthTone): string {
+  if (tone === "success") return "bg-success/12 text-success";
+  if (tone === "danger") return "bg-danger/12 text-danger";
+  if (tone === "warning") return "bg-warning/12 text-warning";
+  return "bg-surface text-text-tertiary";
 }
 
 function HistoricalTrafficNotice({ title, detail }: { title: string; detail: string }) {
