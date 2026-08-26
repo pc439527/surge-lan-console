@@ -1,4 +1,5 @@
 import { RouterProvider } from "react-router-dom";
+import { BuildUpdateNotice } from "@/components/system/BuildUpdateNotice";
 import { Toaster } from "@/components/ui/Toast";
 import { AuthGate } from "@/features/auth/AuthGate";
 import { useThemeSync } from "@/lib/theme";
@@ -14,9 +15,10 @@ export default function App() {
       <AuthGate>
         <SurgeClientProvider>
           <RouterProvider router={router} />
-          <Toaster />
         </SurgeClientProvider>
       </AuthGate>
+      <Toaster />
+      <BuildUpdateNotice />
     </Providers>
   );
 }
