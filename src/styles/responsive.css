@@ -159,8 +159,9 @@ main[data-page="policies"] [class~="md:grid-cols-2"][class~="xl:grid-cols-3"] {
 }
 
 /* Rules, Scripts, Node Quality and DNS-local historically had desktop-only
-   tables. Reflow them into labelled cards using content width. */
-@container page (max-width: 760px) {
+   tables. Keep tablet-width content compact; only narrow phone-like content
+   reflows these dense tables into labelled cards. */
+@container page (max-width: 620px) {
   main[data-page="rules"] .overflow-x-auto,
   main[data-page="scripts"] .overflow-x-auto,
   main[data-page="node-quality"] .overflow-x-auto,
