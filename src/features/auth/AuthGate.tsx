@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { coreApi, CoreApiError, type CoreAuthState } from "@/lib/core-api";
 
 const AUTH_STATE_KEY = ["core", "auth-state"] as const;
+const visualMode = import.meta.env.MODE === "visual";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -15,7 +16,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     queryFn: coreApi.getAuthState,
     retry: 1,
     refetchOnWindowFocus: true,
+    enabled: !visualMode,
   });
+
+  // Visual CI is a compile-time-only mode used to render the application shell
+  // against MockSurgeClient. Production/dev builds never take this branch, so
+  // the Local Core data-password gate remains mandatory for real usage.
+  if (visualMode) return children;
 
   if (authQuery.isLoading) return <GateLoading />;
   if (authQuery.isError || !authQuery.data) {
