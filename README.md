@@ -201,12 +201,12 @@ server/
 
 ## 参考资料与开发说明
 
-本项目主要依据以下公开资料进行独立实现：
+本项目开发过程中参考了以下公开资料：
 
-- [Surge 官方 HTTP API 文档](https://manual.nssurge.com/tools/http-api.html) — API 能力与接口语义依据；
-- [geekdada/yasd](https://github.com/geekdada/yasd) — API 行为与兼容性参考。
+- [Surge 官方 HTTP API 文档](https://manual.nssurge.com/tools/http-api.html)
+- [geekdada/yasd](https://github.com/geekdada/yasd)
 
-本项目是独立的 Surge LAN Console；YASD 仅作为 API / 行为参考，没有复制其 UI。本仓库的代码、测试与文档均由 AI 辅助生成和维护，并经过自动化测试与人工验收，但不保证不存在错误。喜欢就用，也欢迎提交 Issue 或 Pull Request。
+项目代码、测试与文档主要由 AI 生成和维护。喜欢就用，也欢迎提交 Issue 或 Pull Request。
 
 ## 安全边界
 
