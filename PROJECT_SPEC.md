@@ -97,17 +97,17 @@ Dashboard   Connect Page
 
 ```text
 Apple TV
-192.168.50.10:6171
+192.168.x.6:6171
 ● Online
 
 
 MacBook Pro
-192.168.50.12:6171
+192.168.x.20:6171
 ○ Offline
 
 
 iPhone
-192.168.50.30:6171
+192.168.x.30:6171
 ● Online
 ```
 
@@ -117,10 +117,10 @@ Header 点击当前设备弹出切换器：
 Connections
 
 ● Apple TV
-  192.168.50.10
+  192.168.x.6
 
 ○ MacBook
-  192.168.50.12
+  192.168.x.20
 
 ──────────────
 ＋ Add Connection
@@ -410,7 +410,7 @@ type SurgeError =
 ```text
 Cannot connect to Surge
 
-192.168.50.10:6171
+192.168.x.6:6171
 
 Please verify:
 • Surge HTTP API is enabled

@@ -36,11 +36,11 @@ Surge LAN Console 是一个面向局域网 Surge 实例的 Web 管理控制台�
 ```text
 Surge Instance:
 Apple TV
-192.168.50.10:6171
+192.168.x.6:6171
 
 Console 当前访问地址示例：
 
-http://192.168.50.20
+http://192.168.x.22
 ```
 
 项目不应该只是「Surge API 的页面映射」，而应该逐步成为：
@@ -197,7 +197,7 @@ Traffic Chart
 ```text
 ┌──────────────────────────────────────────────────────┐
 │ Dashboard                            RULE ▼          │
-│ Apple TV · 192.168.50.10 · Connected                  │
+│ Apple TV · 192.168.x.6 · Connected                  │
 └──────────────────────────────────────────────────────┘
 ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
 │ ↑ Upload   │ │ ↓ Download │ │ Connections│ │ Traffic    │
@@ -658,7 +658,7 @@ key
 ```text
 API Diagnostics
 Apple TV
-192.168.50.10:6171
+192.168.x.6:6171
 
 Connection
 ────────────────────────
@@ -1173,7 +1173,7 @@ Light：Background `#F5F5F7`，Card rgba white，Border subtle gray。
 
 ```text
 ● Apple TV                            Current
-192.168.50.10 · Port 6171
+192.168.x.6 · Port 6171
 Status: Connected · Latency: 8ms · Platform: tvOS
 [Test] [Edit] [...]
 ```
@@ -1188,7 +1188,7 @@ Test 需要明确区分 `Host unreachable` 与 `Authentication failed`：
 
 ```text
 ✓ Connected
-Host: 192.168.50.10 · Latency: 8ms · Authentication: OK
+Host: 192.168.x.6 · Latency: 8ms · Authentication: OK
 
 ⚠ Host reachable · Authentication failed
 请检查 HTTP API 密码。
@@ -1207,7 +1207,7 @@ Host: 192.168.50.10 · Latency: 8ms · Authentication: OK
 ```text
 Settings
 General: Theme / Language / Polling / Display
-Connection: Current Apple TV / API 192.168.50.10:6171 / Diagnostics
+Connection: Current Apple TV / API 192.168.x.6:6171 / Diagnostics
 System: Version / Commit / Build / Environment
 ```
 
@@ -1227,7 +1227,7 @@ SURGE: 模块 / 脚本 / 配置 / 事件
 
 ## 63. Sidebar Current Connection
 
-底部显示 `● Apple TV / 192.168.50.10:6171 / v0.2.0 · da3065f`。点击弹出 Connection Switcher。
+底部显示 `● Apple TV / 192.168.x.6:6171 / v0.2.0 · da3065f`。点击弹出 Connection Switcher。
 
 ---
 
@@ -1516,7 +1516,7 @@ Flush DNS / Kill Request / Delete Connection / Profile Change / Module Toggle �
 
 ## 94. Delete Connection
 
-必须确认，并显示 `Apple TV / 192.168.50.10` 避免删错实例。
+必须确认，并显示 `Apple TV / 192.168.x.6` 避免删错实例。
 
 ---
 
@@ -1590,7 +1590,7 @@ Dashboard 总流量推荐显示 `Session Traffic`（Surge 当前运行会话累�
 ## 103. 第一阶段 P0（必须优先完成）
 
 - Build Version / Git Commit 展示
-- 确认 192.168.50.20 部署代码与 GitHub main 一致
+- 确认 192.168.x.22 部署代码与 GitHub main 一致
 - 修复浏览器旧 Bundle / Cache
 - Dashboard Grid 高度问题
 - Dashboard Policies 改摘要
