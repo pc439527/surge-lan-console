@@ -14,3 +14,4 @@ data/
 # Local backup/screenshot artifacts (never commit)
 .db-backups/
 .tmp-pin-demo/
+.tmp-gh-auth/
