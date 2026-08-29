@@ -10,7 +10,7 @@ Surge LAN Console 提供仪表盘、设备总览、策略与请求管理、流�
 | --- | --- |
 | Web UI | React 19 + TypeScript + Vite；Nginx 托管静态资源 |
 | Local Core | Node.js 22 内置 HTTP/crypto/SQLite；提供 `/api/*` |
-| 数据保护 | 首次启动创建数据密码；scrypt 派生主密钥；随机 DEK 使用 AES-256-GCM 封装 |
+| 数据保护 | 首次启动创建 4 位数字数据 PIN；scrypt 派生主密钥；随机 DEK 使用 AES-256-GCM 封装 |
 | Session | HttpOnly + SameSite=Strict Cookie；解锁后的 DEK 只保存在 Core 内存，Core 重启即失效 |
 | SQLite | 开发默认 `./data/surge-console.db`；容器使用 `/data/surge-console.db`；WAL + migration |
 | Surge 访问 | 当前仍保留浏览器直连及 Nginx `/v1/` 白名单代理；下一阶段迁移为 Core 统一代理 |
@@ -23,7 +23,7 @@ Surge LAN Console 提供仪表盘、设备总览、策略与请求管理、流�
 
 | 模块 | 说明 |
 | --- | --- |
-| Security Gate | 首次创建数据密码；后续输入密码解锁；Settings 可立即锁定 |
+| Security Gate | 首次创建 4 位数字数据 PIN；后续输入 PIN 解锁；Settings 可立即锁定 |
 | Dashboard | 查看实时上传/下载速率、活动连接、API 延迟、策略组、近期请求和事件 |
 | Fleet Console | 汇总已保存设备的在线状态、流量、活动请求与 API Key 状态，并可切换活动设备 |
 | Connections | 维护多个 Surge 实例的名称、协议、主机、端口、平台覆盖和 API Key |
@@ -58,7 +58,7 @@ pnpm core:dev
 pnpm dev
 ```
 
-Vite 会把 `/api/*` 转发至 `http://127.0.0.1:8787`。首次打开页面时需要创建数据密码；以后打开页面只需输入该密码回车/点击“解锁”。
+Vite 会把 `/api/*` 转发至 `http://127.0.0.1:8787`。首次打开页面时需要创建 4 位数字数据 PIN；以后打开页面输入该 PIN 即自动解锁。
 
 Local Core 默认配置：
 
@@ -99,17 +99,17 @@ Frontend production build
 Core TypeScript build
 ```
 
-## 数据密码与 SQLite
+## 数据 PIN 与 SQLite
 
 首次初始化时，Core 会：
 
-1. 使用 scrypt 从数据密码派生本地主密钥；
+1. 使用 scrypt 从 4 位数字数据 PIN 派生本地主密钥；
 2. 随机生成 256-bit Data Encryption Key（DEK）；
 3. 使用 AES-256-GCM 加密 DEK；
-4. SQLite 只保存密码校验材料和加密后的 DEK，不保存明文密码；
+4. SQLite 只保存 PIN 校验材料和加密后的 DEK，不保存明文 PIN；
 5. 解锁后，DEK 仅存在于当前 Core Session 内存中。
 
-密码错误达到连续阈值后，`/api/auth/unlock` 会短暂限速。生产访问由 Nginx 提供同源 `/api/`，Core 容器默认不暴露宿主机端口。
+PIN 连续错误达到阈值后，`/api/auth/unlock` 会进入 5–30 分钟递增封禁。生产访问由 Nginx 提供同源 `/api/`，Core 容器默认不暴露宿主机端口。
 
 当前数据库 migration 创建：
 
@@ -207,7 +207,7 @@ src/
 server/
 ├── src/
 │   ├── app.ts           # Core HTTP routes / auth rate limit
-│   ├── auth-service.ts  # 数据密码与 Vault 解锁流程
+│   ├── auth-service.ts  # 数据 PIN 与 Vault 解锁流程
 │   ├── config.ts        # Core 环境配置
 │   ├── database.ts      # SQLite + migrations
 │   ├── security.ts      # scrypt / AES-256-GCM / token helpers
@@ -242,7 +242,7 @@ server/
 
 ## 安全边界
 
-该项目面向受信任的局域网或受控 VPN。即使已经增加数据密码，也不要在没有 TLS 终止、网络访问控制和适当反向代理保护的情况下直接暴露到公共互联网。
+该项目面向受信任的局域网或受控 VPN。即使已经设置 4 位数字数据 PIN，也不要在没有 TLS 终止、网络访问控制和适当反向代理保护的情况下直接暴露到公共互联网。
 
 ## License
 

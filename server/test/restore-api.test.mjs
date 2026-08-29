@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { createCoreApp } from "../dist/app.js";
 
-const PASSWORD = "correct horse battery staple";
+const PASSWORD = "4829";
 
 async function listen(app) {
   app.server.listen(0, "127.0.0.1");

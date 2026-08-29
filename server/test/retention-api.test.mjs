@@ -42,8 +42,8 @@ test("retention settings API requires auth, validates bounds, persists updates, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        password: "correct horse battery staple",
-        confirmPassword: "correct horse battery staple",
+        password: "4829",
+        confirmPassword: "4829",
       }),
     });
     assert.equal(setup.status, 201);

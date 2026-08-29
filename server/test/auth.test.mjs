@@ -44,8 +44,8 @@ test("auth bootstrap, lock and unlock lifecycle", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        password: "correct horse battery staple",
-        confirmPassword: "correct horse battery staple",
+        password: "4829",
+        confirmPassword: "4829",
       }),
     });
     assert.equal(setup.status, 201);
@@ -69,15 +69,24 @@ test("auth bootstrap, lock and unlock lifecycle", async () => {
     const wrong = await fetch(`${core.baseUrl}/api/auth/unlock`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password: "incorrect password" }),
+      body: JSON.stringify({ password: "0000" }),
     });
     assert.equal(wrong.status, 401);
     assert.equal((await wrong.json()).error.code, "invalid_password");
 
+    // 4 位之外的输入直接按格式错误拒绝，不消耗解锁失败计数
+    const malformed = await fetch(`${core.baseUrl}/api/auth/unlock`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "12" }),
+    });
+    assert.equal(malformed.status, 400);
+    assert.equal((await malformed.json()).error.code, "pin_format");
+
     const unlock = await fetch(`${core.baseUrl}/api/auth/unlock`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password: "correct horse battery staple" }),
+      body: JSON.stringify({ password: "4829" }),
     });
     assert.equal(unlock.status, 200);
     assert.equal((await unlock.json()).authenticated, true);
@@ -87,7 +96,7 @@ test("auth bootstrap, lock and unlock lifecycle", async () => {
   }
 });
 
-test("setup rejects weak passwords and health reports SQLite", async () => {
+test("setup rejects non-4-digit PINs and health reports SQLite", async () => {
   const core = await startCore();
   try {
     const health = await fetch(`${core.baseUrl}/api/health`);
@@ -101,10 +110,26 @@ test("setup rejects weak passwords and health reports SQLite", async () => {
     const setup = await fetch(`${core.baseUrl}/api/auth/setup`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password: "short", confirmPassword: "short" }),
+      body: JSON.stringify({ password: "123", confirmPassword: "123" }),
     });
     assert.equal(setup.status, 400);
-    assert.equal((await setup.json()).error.code, "password_too_short");
+    assert.equal((await setup.json()).error.code, "pin_format");
+
+    const nonNumeric = await fetch(`${core.baseUrl}/api/auth/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "abcd", confirmPassword: "abcd" }),
+    });
+    assert.equal(nonNumeric.status, 400);
+    assert.equal((await nonNumeric.json()).error.code, "pin_format");
+
+    const mismatch = await fetch(`${core.baseUrl}/api/auth/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "1234", confirmPassword: "5678" }),
+    });
+    assert.equal(mismatch.status, 400);
+    assert.equal((await mismatch.json()).error.code, "password_mismatch");
   } finally {
     await core.close();
   }

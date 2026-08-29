@@ -103,7 +103,7 @@ export function AutomationPage() {
             <CardContent className="text-xs leading-5 text-text-tertiary">
               <p>网页关闭：任务继续运行。</p>
               <p>Session 超时：已解锁的 Core Runtime Lease 仍可继续自动任务。</p>
-              <p>“立即锁定”或 Core 重启：DEK 被清除，受保护任务暂停；下次输入数据密码后自动恢复。</p>
+              <p>“立即锁定”或 Core 重启：DEK 被清除，受保护任务暂停；下次输入数据 PIN 后自动恢复。</p>
             </CardContent>
           </Card>
         </aside>
@@ -140,7 +140,7 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
         [result.backup.id]: result.backup,
         [result.safetyBackup.id]: result.safetyBackup,
       }));
-      toast.success("恢复已接受，Core 正在安全重启；重启后请重新输入数据密码。", { duration: 12_000 });
+      toast.success("恢复已接受，Core 正在安全重启；重启后请重新输入 PIN。", { duration: 12_000 });
     },
     onError: (error) => toast.error(error instanceof CoreApiError ? error.message : "数据库恢复失败"),
   });
@@ -161,7 +161,7 @@ function BackupCard({ backups, loading, onChanged }: { backups: BackupInfo[]; lo
     }
 
     const confirmed = window.confirm(
-      `确认恢复此 SQLite 备份？\n\n${backup.id}\n\n恢复前会自动创建当前数据库的安全恢复点；随后 Core 会停止并重启。恢复完成后，数据密码、连接与历史数据都以该备份中的状态为准。`,
+      `确认恢复此 SQLite 备份？\n\n${backup.id}\n\n恢复前会自动创建当前数据库的安全恢复点；随后 Core 会停止并重启。恢复完成后，数据 PIN、连接与历史数据都以该备份中的状态为准。`,
     );
     if (!confirmed) return;
     restore.mutate({ id: backup.id, expectedSha256: validation.sha256 });

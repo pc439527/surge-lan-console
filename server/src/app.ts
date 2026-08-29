@@ -34,6 +34,10 @@ interface CoreAppOptions {
 }
 interface AttemptBucket { failures: number; windowStartedAt: number; blockedUntil: number }
 
+/**
+ * PIN 空间只有 10^4，必须防在线枚举：同源 60s 滚动窗口内失败达到 5 次即进入
+ * 封禁，封禁时长按 5 → 10 → 20 → 30 分钟递增；输入正确 PIN 后清零。
+ */
 class UnlockRateLimiter {
   private readonly buckets = new Map<string, AttemptBucket>();
   constructor(private readonly now: () => number) {}
@@ -42,9 +46,16 @@ class UnlockRateLimiter {
     const remaining = bucket.blockedUntil - this.now(); return remaining > 0 ? Math.ceil(remaining / 1000) : 0;
   }
   failure(key: string): void {
-    const now = this.now(); const bucket = this.buckets.get(key);
-    if (!bucket || now - bucket.windowStartedAt > 60_000) { this.buckets.set(key, { failures: 1, windowStartedAt: now, blockedUntil: 0 }); return; }
-    bucket.failures += 1; if (bucket.failures >= 5) bucket.blockedUntil = now + 60_000;
+    const now = this.now(); const previous = this.buckets.get(key);
+    const bucket = previous && now - previous.windowStartedAt <= 60_000
+      ? previous
+      : { failures: 0, windowStartedAt: now, blockedUntil: 0 };
+    bucket.failures += 1; bucket.windowStartedAt = now;
+    if (bucket.failures >= 5) {
+      const tier = Math.floor(bucket.failures / 5) - 1;
+      bucket.blockedUntil = now + Math.min(30 * 60_000, 5 * 60_000 * (2 ** tier));
+    }
+    this.buckets.set(key, bucket);
   }
   success(key: string): void { this.buckets.delete(key); }
 }
@@ -86,7 +97,7 @@ function ensureOrigin(request: IncomingMessage): void {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method ?? "GET")) return; const origin = request.headers.origin; if (!origin || Array.isArray(origin)) return;
   try { if (new URL(origin).host !== request.headers.host) throw new Error("origin mismatch"); } catch { throw new CoreError("origin_rejected", 403, "请求来源校验失败。"); }
 }
-function requireSession(sessions: SessionStore, token: string | null): SessionInfo { const session = sessions.get(token); if (!session) throw new CoreError("session_required", 401, "控制台已锁定，请重新输入数据密码。"); return session; }
+function requireSession(sessions: SessionStore, token: string | null): SessionInfo { const session = sessions.get(token); if (!session) throw new CoreError("session_required", 401, "控制台已锁定，请重新输入 PIN。"); return session; }
 function requireBackups(backups: BackupService | null): BackupService { if (!backups) throw new CoreError("backup_unavailable", 409, "当前数据库不支持持久化备份。"); return backups; }
 function asConnectionInput(body: Record<string, unknown>): ConnectionInput {
   const platform = typeof body.platform === "string" ? body.platform : null;
@@ -140,7 +151,7 @@ export function createCoreApp(options: CoreAppOptions) {
       if (method === "POST" && pathname === "/api/auth/setup") { const body = await readJson(request); const session = await auth.setup(stringField(body, "password"), stringField(body, "confirmPassword")); setSessionCookie(request, response, session.token, session.expiresAt, now()); sendJson(response, 201, auth.state(session.token)); return; }
       if (method === "POST" && pathname === "/api/auth/unlock") {
         const ip = requestIp(request); const retryAfter = limiter.retryAfterSeconds(ip);
-        if (retryAfter > 0) { response.setHeader("Retry-After", retryAfter.toString()); events.publish({ type: "unauthorized-ban", fingerprint: `auth:${ip}`, title: "Unauthorized Ban", body: "数据密码连续错误，当前来源已被临时限速。", severity: "warning" }); throw new AuthError("too_many_attempts", 429, "密码错误次数过多，请稍后再试。"); }
+        if (retryAfter > 0) { response.setHeader("Retry-After", retryAfter.toString()); events.publish({ type: "unauthorized-ban", fingerprint: `auth:${ip}`, title: "Unauthorized Ban", body: "PIN 连续错误，当前来源已被临时限速。", severity: "warning" }); throw new AuthError("too_many_attempts", 429, "PIN 错误次数过多，请稍后再试。"); }
         const body = await readJson(request);
         try { const session = await auth.unlock(stringField(body, "password")); limiter.success(ip); setSessionCookie(request, response, session.token, session.expiresAt, now()); sendJson(response, 200, auth.state(session.token)); }
         catch (error) { if (error instanceof AuthError && error.code === "invalid_password") limiter.failure(ip); throw error; } return;

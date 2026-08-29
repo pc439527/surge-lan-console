@@ -282,6 +282,18 @@
   }
 }
 
+/* PIN 解锁失败提示动画（prefers-reduced-motion 由全局规则统一收敛） */
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.animate-pin-shake {
+  animation: pin-shake 0.4s var(--ease-apple);
+}
+
 .scrollbar-none {
   scrollbar-width: none;
   -ms-overflow-style: none;

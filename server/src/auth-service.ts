@@ -11,6 +11,9 @@ import type { SessionStore } from "./session-store.js";
 
 export { AuthError } from "./errors.js";
 
+/** 数据保护凭据固定为 4 位数字 PIN。 */
+const PIN_PATTERN = /^\d{4}$/;
+
 const PASSWORD_META_KEY = "auth.password.v1";
 const VAULT_META_KEY = "auth.vault-envelope.v1";
 const INITIALIZED_AT_KEY = "auth.initialized-at";
@@ -43,13 +46,13 @@ export class AuthService {
   }
 
   async setup(password: string, confirmPassword: string): Promise<{ token: string; expiresAt: number }> {
-    if (this.isInitialized()) throw new AuthError("already_initialized", 409, "数据密码已经初始化。");
-    this.validatePassword(password, confirmPassword);
+    if (this.isInitialized()) throw new AuthError("already_initialized", 409, "数据保护 PIN 已经初始化。");
+    this.validatePin(password, confirmPassword);
 
     const material = await createPasswordMaterial(password);
     try {
       this.database.transaction(() => {
-        if (this.isInitialized()) throw new AuthError("already_initialized", 409, "数据密码已经初始化。");
+        if (this.isInitialized()) throw new AuthError("already_initialized", 409, "数据保护 PIN 已经初始化。");
         this.database.setMeta(PASSWORD_META_KEY, JSON.stringify(material.passwordRecord));
         this.database.setMeta(VAULT_META_KEY, JSON.stringify(material.vaultEnvelope));
         this.database.setMeta(INITIALIZED_AT_KEY, new Date().toISOString());
@@ -62,13 +65,14 @@ export class AuthService {
   }
 
   async unlock(password: string): Promise<{ token: string; expiresAt: number }> {
-    if (!this.isInitialized()) throw new AuthError("not_initialized", 409, "请先初始化数据密码。");
-    if (!password) throw new AuthError("password_required", 400, "请输入数据密码。");
+    if (!this.isInitialized()) throw new AuthError("not_initialized", 409, "请先创建数据保护 PIN。");
+    // 格式不合法直接拒绝，避免无谓的 scrypt 计算；不计入解锁失败限速。
+    if (!PIN_PATTERN.test(password)) throw new AuthError("pin_format", 400, "请输入 4 位数字 PIN。");
 
     const passwordRecord = this.parseMeta<PasswordRecord>(PASSWORD_META_KEY);
     const vaultEnvelope = this.parseMeta<VaultEnvelope>(VAULT_META_KEY);
     const vaultKey = await unlockVault(password, passwordRecord, vaultEnvelope);
-    if (!vaultKey) throw new AuthError("invalid_password", 401, "数据密码错误。");
+    if (!vaultKey) throw new AuthError("invalid_password", 401, "PIN 错误，请重试。");
 
     try {
       this.runtimeVault.unlock(vaultKey);
@@ -84,10 +88,9 @@ export class AuthService {
     this.runtimeVault.lock();
   }
 
-  private validatePassword(password: string, confirmPassword: string): void {
-    if (password.length < 8) throw new AuthError("password_too_short", 400, "数据密码至少需要 8 个字符。");
-    if (password.length > 256) throw new AuthError("password_too_long", 400, "数据密码不能超过 256 个字符。");
-    if (password !== confirmPassword) throw new AuthError("password_mismatch", 400, "两次输入的数据密码不一致。");
+  private validatePin(password: string, confirmPassword: string): void {
+    if (!PIN_PATTERN.test(password)) throw new AuthError("pin_format", 400, "数据保护 PIN 需要恰好 4 位数字。");
+    if (password !== confirmPassword) throw new AuthError("password_mismatch", 400, "两次输入的 PIN 不一致。");
   }
 
   private parseMeta<T>(key: string): T {

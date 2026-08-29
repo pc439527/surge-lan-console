@@ -26,7 +26,7 @@ test("policy traffic analytics requires session and accepts 30d range", async ()
 
     const setup = await fetch(`${core.baseUrl}/api/auth/setup`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password: "correct horse battery staple", confirmPassword: "correct horse battery staple" }),
+      body: JSON.stringify({ password: "4829", confirmPassword: "4829" }),
     });
     const session = cookie(setup);
     const create = await fetch(`${core.baseUrl}/api/connections`, {

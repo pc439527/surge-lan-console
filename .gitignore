@@ -10,3 +10,7 @@ data/
 .env
 .env.*
 !.env.example
+
+# Local backup/screenshot artifacts (never commit)
+.db-backups/
+.tmp-pin-demo/
