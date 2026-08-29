@@ -199,6 +199,15 @@ server/
 | [docs/OPTIMIZATION_PLAN.md](./docs/OPTIMIZATION_PLAN.md) | 兼容性、诊断与实机优化记录 |
 | [AGENTS.md](./AGENTS.md) | 开发约束（供 AI Agent 使用） |
 
+## 参考资料与开发说明
+
+本项目主要依据以下公开资料进行独立实现：
+
+- [Surge 官方 HTTP API 文档](https://manual.nssurge.com/tools/http-api.html) — API 能力与接口语义依据；
+- [geekdada/yasd](https://github.com/geekdada/yasd) — API 行为与兼容性参考。
+
+本项目是独立的 Surge LAN Console；YASD 仅作为 API / 行为参考，没有复制其 UI。本仓库的代码、测试与文档均由 AI 辅助生成和维护，并经过自动化测试与人工验收，但不保证不存在错误。喜欢就用，也欢迎提交 Issue 或 Pull Request。
+
 ## 安全边界
 
 本项目面向受信任的局域网或受控 VPN。即使设置了数据 PIN，也不要绕过 TLS 终止、网络访问控制与反向代理把控制台直接暴露到公共互联网。经 Tailscale / HTTPS 访问时，Nginx 会为 Cookie 追加 Secure 标志。
