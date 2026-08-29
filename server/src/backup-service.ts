@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, createReadStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, createReadStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AppDatabase } from "./database.js";
@@ -51,7 +51,8 @@ export class BackupService {
   }
 
   async create(source: BackupSource): Promise<BackupValidation> {
-    mkdirSync(this.backupDir, { recursive: true });
+    mkdirSync(this.backupDir, { recursive: true, mode: 0o700 });
+    chmodSync(this.backupDir, 0o700);
     const id = this.makeBackupId(source);
     const finalPath = path.join(this.backupDir, id);
     const partialPath = `${finalPath}.partial`;
@@ -62,7 +63,9 @@ export class BackupService {
       if (!validation.valid) {
         throw new CoreError("backup_validation_failed", 500, `SQLite 备份完整性校验失败：${validation.quickCheck}`);
       }
+      chmodSync(partialPath, 0o600);
       renameSync(partialPath, finalPath);
+      chmodSync(finalPath, 0o600);
       this.prune();
       return { ...validation, sizeBytes: statSync(finalPath).size };
     } catch (error) {
@@ -73,7 +76,8 @@ export class BackupService {
   }
 
   list(): BackupInfo[] {
-    mkdirSync(this.backupDir, { recursive: true });
+    mkdirSync(this.backupDir, { recursive: true, mode: 0o700 });
+    chmodSync(this.backupDir, 0o700);
     return readdirSync(this.backupDir)
       .filter((name) => BACKUP_RE.test(name))
       .map((id) => this.info(id))

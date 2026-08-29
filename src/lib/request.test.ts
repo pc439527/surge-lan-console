@@ -54,7 +54,7 @@ describe("classifyRequestProtocol (Request Inspector V2)", () => {
   });
 
   it("uses request.method when Surge reports the app protocol there", () => {
-    const info = classifyRequestProtocol(req({ method: "HTTPS", URL: "https://api.deepseek.com/x", remoteAddress: "1.2.3.4:443" }));
+    const info = classifyRequestProtocol(req({ method: "HTTPS", URL: "https://api.example.com/x", remoteAddress: "1.2.3.4:443" }));
     expect(info.app).toBe("HTTPS");
     expect(info.transport).toBe("TCP");
   });
@@ -145,7 +145,7 @@ describe("parseHostPort", () => {
 
 describe("display address helpers", () => {
   it("requestHostLabel prefers hostname, then URL host, then remote host", () => {
-    expect(requestHostLabel(req({ hostname: "api.deepseek.com", URL: "https://x/", remoteAddress: "1.2.3.4:443" }))).toBe("api.deepseek.com");
+    expect(requestHostLabel(req({ hostname: "api.example.com", URL: "https://x/", remoteAddress: "1.2.3.4:443" }))).toBe("api.example.com");
     expect(requestHostLabel(req({ URL: "https://github.com/x" }))).toBe("github.com");
     expect(requestHostLabel(req({ remoteAddress: "203.0.113.53:53 (Port Map)" }))).toBe("203.0.113.53");
     expect(requestHostLabel(req({}))).toBe("—");
@@ -166,14 +166,14 @@ describe("parseRequestHeaders", () => {
   it("parses a request line and header rows", () => {
     const parsed = parseRequestHeaders([
       "GET /openapi.json HTTP/1.1",
-      "Host: api-docs.deepseek.com",
-      "User-Agent: DeepSeek-CLI/0.23.1",
+      "Host: docs.example.com",
+      "User-Agent: ExampleClient/1.0",
       "Accept: application/json",
     ].join("\n"));
     expect(parsed.requestLine).toBe("GET /openapi.json HTTP/1.1");
     expect(parsed.headers).toEqual([
-      { name: "Host", value: "api-docs.deepseek.com" },
-      { name: "User-Agent", value: "DeepSeek-CLI/0.23.1" },
+      { name: "Host", value: "docs.example.com" },
+      { name: "User-Agent", value: "ExampleClient/1.0" },
       { name: "Accept", value: "application/json" },
     ]);
   });

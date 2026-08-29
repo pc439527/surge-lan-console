@@ -15,6 +15,11 @@ services:
     image: surge-lan-console-core:${APP_VERSION:-0.5.0}
     container_name: surge-core
     environment:
+      SLC_HOST: 0.0.0.0
+      SLC_PORT: 8787
+      SLC_DATA_DIR: /data
+      SLC_SESSION_IDLE_MINUTES: ${SLC_SESSION_IDLE_MINUTES:-30}
+      SLC_SESSION_ABSOLUTE_HOURS: ${SLC_SESSION_ABSOLUTE_HOURS:-12}
       SLC_UPDATE_MANIFEST_URL: ${SLC_UPDATE_MANIFEST_URL:-}
       SLC_UPDATE_GITHUB_REPO: ${SLC_UPDATE_GITHUB_REPO:-}
       SLC_UPDATE_GITHUB_TOKEN: ${SLC_UPDATE_GITHUB_TOKEN:-}

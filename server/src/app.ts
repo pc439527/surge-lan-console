@@ -82,7 +82,9 @@ function cookieValue(request: IncomingMessage, name: string): string | null {
   for (const segment of cookie.split(";")) { const [rawName, ...rest] = segment.trim().split("="); if (rawName === name) return rest.join("="); } return null;
 }
 function isSecureRequest(request: IncomingMessage): boolean {
-  const forwardedProto = request.headers["x-forwarded-proto"]; const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto; return proto?.split(",")[0]?.trim() === "https";
+  const forwardedProto = request.headers["x-forwarded-proto"];
+  if (Array.isArray(forwardedProto)) return false;
+  return forwardedProto?.trim().toLowerCase() === "https";
 }
 function setSessionCookie(request: IncomingMessage, response: ServerResponse, token: string, expiresAt: number, now: number): void {
   const maxAge = Math.max(1, Math.floor((expiresAt - now) / 1000)); const parts = [`${SESSION_COOKIE}=${token}`, "Path=/", "HttpOnly", "SameSite=Strict", `Max-Age=${maxAge}`, "Priority=High"]; if (isSecureRequest(request)) parts.push("Secure"); response.setHeader("Set-Cookie", parts.join("; "));
@@ -91,11 +93,30 @@ function clearSessionCookie(request: IncomingMessage, response: ServerResponse):
   const parts = [`${SESSION_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Strict", "Max-Age=0", "Priority=High"]; if (isSecureRequest(request)) parts.push("Secure"); response.setHeader("Set-Cookie", parts.join("; "));
 }
 function requestIp(request: IncomingMessage): string {
-  const forwardedFor = request.headers["x-forwarded-for"]; const first = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)?.split(",")[0]?.trim(); return first || request.socket.remoteAddress || "unknown";
+  // Never key security controls from client-supplied forwarding headers. In the
+  // supported Compose topology nginx is the only peer, so this deliberately
+  // applies one conservative unlock budget to all users behind that proxy.
+  return request.socket.remoteAddress || "unknown";
 }
 function ensureOrigin(request: IncomingMessage): void {
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method ?? "GET")) return; const origin = request.headers.origin; if (!origin || Array.isArray(origin)) return;
-  try { if (new URL(origin).host !== request.headers.host) throw new Error("origin mismatch"); } catch { throw new CoreError("origin_rejected", 403, "请求来源校验失败。"); }
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method ?? "GET")) return;
+  const origin = request.headers.origin;
+  const host = request.headers.host;
+  const peer = request.socket.remoteAddress ?? "";
+  const loopbackPeer = peer === "127.0.0.1" || peer === "::1" || peer === "::ffff:127.0.0.1";
+  // Local CLI/test automation may omit Origin. Every non-loopback write must
+  // carry one unambiguous same-origin value.
+  if (!origin && loopbackPeer) return;
+  if (!origin || Array.isArray(origin) || !host) throw new CoreError("origin_rejected", 403, "请求来源校验失败。");
+  try {
+    if (new URL(origin).host !== host) throw new Error("origin mismatch");
+  } catch {
+    throw new CoreError("origin_rejected", 403, "请求来源校验失败。");
+  }
+}
+function decodedPathSegment(value: string): string {
+  try { return decodeURIComponent(value); }
+  catch { throw new CoreError("invalid_path", 400, "请求路径编码无效。"); }
 }
 function requireSession(sessions: SessionStore, token: string | null): SessionInfo { const session = sessions.get(token); if (!session) throw new CoreError("session_required", 401, "控制台已锁定，请重新输入 PIN。"); return session; }
 function requireBackups(backups: BackupService | null): BackupService { if (!backups) throw new CoreError("backup_unavailable", 409, "当前数据库不支持持久化备份。"); return backups; }
@@ -131,12 +152,19 @@ export function createCoreApp(options: CoreAppOptions) {
   const backups = database.location() ? new BackupService(database) : null;
   const auth = new AuthService(database, sessions, runtimeVault); const limiter = new UnlockRateLimiter(now); scheduler.start();
   let runtimeClosed = false;
+  let runtimeQuiesced = false;
+  let restoreInProgress = false;
 
+  const quiesceRuntime = () => {
+    if (runtimeQuiesced) return;
+    runtimeQuiesced = true;
+    scheduler.stop();
+    notifications.close();
+  };
   const closeRuntime = () => {
     if (runtimeClosed) return;
     runtimeClosed = true;
-    scheduler.stop();
-    notifications.close();
+    quiesceRuntime();
     sessions.clear();
     runtimeVault.lock();
     database.close();
@@ -156,7 +184,7 @@ export function createCoreApp(options: CoreAppOptions) {
         try { const session = await auth.unlock(stringField(body, "password")); limiter.success(ip); setSessionCookie(request, response, session.token, session.expiresAt, now()); sendJson(response, 200, auth.state(session.token)); }
         catch (error) { if (error instanceof AuthError && error.code === "invalid_password") limiter.failure(ip); throw error; } return;
       }
-      if (method === "POST" && pathname === "/api/auth/lock") { auth.lock(); clearSessionCookie(request, response); sendJson(response, 200, auth.state(null)); return; }
+      if (method === "POST" && pathname === "/api/auth/lock") { requireSession(sessions, sessionToken); auth.lock(); clearSessionCookie(request, response); sendJson(response, 200, auth.state(null)); return; }
 
       if (method === "GET" && pathname === "/api/update-check") {
         requireSession(sessions, sessionToken);
@@ -174,33 +202,33 @@ export function createCoreApp(options: CoreAppOptions) {
       if (method === "POST" && pathname === "/api/connections/import") { const session = requireSession(sessions, sessionToken); const body = await readJson(request); const rawItems = Array.isArray(body.connections) ? body.connections : []; const items = rawItems.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)).map(asConnectionInput); const result = connections.importLegacy(items, session.vaultKey); scheduler.ensureDefaultsForAll(); sendJson(response, 200, result); return; }
       const connectionMatch = pathname.match(/^\/api\/connections\/([^/]+)$/);
       if (connectionMatch) {
-        const id = decodeURIComponent(connectionMatch[1] ?? "");
+        const id = decodedPathSegment(connectionMatch[1] ?? "");
         if (method === "PATCH") { const session = requireSession(sessions, sessionToken); const body = await readJson(request); const patch: Partial<ConnectionInput> = {}; if ("name" in body) patch.name = stringField(body, "name"); if (body.protocol === "http" || body.protocol === "https") patch.protocol = body.protocol; if ("host" in body) patch.host = stringField(body, "host"); if ("port" in body) patch.port = typeof body.port === "number" ? body.port : Number(body.port); if ("platform" in body) patch.platform = body.platform === "ios" || body.platform === "tvos" || body.platform === "macos" ? body.platform : null; if (typeof body.apiKey === "string" && body.apiKey.trim()) patch.apiKey = body.apiKey; sendJson(response, 200, connections.update(id, patch, session.vaultKey)); return; }
         if (method === "DELETE") { requireSession(sessions, sessionToken); connections.delete(id); sendJson(response, 200, { deleted: true }); return; }
       }
       const connectionTestMatch = pathname.match(/^\/api\/connections\/([^/]+)\/test$/);
-      if (method === "POST" && connectionTestMatch) { const session = requireSession(sessions, sessionToken); const id = decodeURIComponent(connectionTestMatch[1] ?? ""); sendJson(response, 200, await surge.test(connections.getCredentials(id, session.vaultKey))); return; }
+      if (method === "POST" && connectionTestMatch) { const session = requireSession(sessions, sessionToken); const id = decodedPathSegment(connectionTestMatch[1] ?? ""); sendJson(response, 200, await surge.test(connections.getCredentials(id, session.vaultKey))); return; }
 
       if (method === "GET" && pathname === "/api/notifications/channels") { requireSession(sessions, sessionToken); sendJson(response, 200, notifications.listChannels()); return; }
       if (method === "POST" && pathname === "/api/notifications/channels") { const session = requireSession(sessions, sessionToken); const body = await readJson(request); sendJson(response, 201, notifications.saveChannel({ name: stringField(body, "name"), endpoint: stringField(body, "endpoint"), enabled: body.enabled !== false }, session.vaultKey)); return; }
       const channelMatch = pathname.match(/^\/api\/notifications\/channels\/([^/]+)$/);
       if (channelMatch) {
-        const id = decodeURIComponent(channelMatch[1] ?? "");
+        const id = decodedPathSegment(channelMatch[1] ?? "");
         if (method === "PATCH") { const session = requireSession(sessions, sessionToken); const body = await readJson(request); const current = notifications.listChannels().find((channel) => channel.id === id); if (!current) throw new CoreError("channel_not_found", 404, "通知渠道不存在。"); sendJson(response, 200, notifications.saveChannel({ id, name: typeof body.name === "string" ? body.name : current.name, ...(typeof body.endpoint === "string" && body.endpoint.trim() ? { endpoint: body.endpoint } : {}), enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled }, session.vaultKey)); return; }
         if (method === "DELETE") { requireSession(sessions, sessionToken); notifications.deleteChannel(id); sendJson(response, 200, { deleted: true }); return; }
       }
       const channelTestMatch = pathname.match(/^\/api\/notifications\/channels\/([^/]+)\/test$/);
-      if (method === "POST" && channelTestMatch) { const session = requireSession(sessions, sessionToken); await notifications.testChannel(decodeURIComponent(channelTestMatch[1] ?? ""), session.vaultKey); sendJson(response, 200, { sent: true }); return; }
+      if (method === "POST" && channelTestMatch) { const session = requireSession(sessions, sessionToken); await notifications.testChannel(decodedPathSegment(channelTestMatch[1] ?? ""), session.vaultKey); sendJson(response, 200, { sent: true }); return; }
       if (method === "GET" && pathname === "/api/notifications/rules") { requireSession(sessions, sessionToken); sendJson(response, 200, notifications.listRules(url.searchParams.get("channelId") ?? undefined)); return; }
       const ruleMatch = pathname.match(/^\/api\/notifications\/rules\/([^/]+)$/);
-      if (method === "PATCH" && ruleMatch) { requireSession(sessions, sessionToken); const body = await readJson(request); sendJson(response, 200, notifications.updateRule(decodeURIComponent(ruleMatch[1] ?? ""), { ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}), ...(typeof body.cooldownSeconds === "number" ? { cooldownSeconds: body.cooldownSeconds } : {}), ...(body.quietStart === null || typeof body.quietStart === "string" ? { quietStart: body.quietStart } : {}), ...(body.quietEnd === null || typeof body.quietEnd === "string" ? { quietEnd: body.quietEnd } : {}), ...(typeof body.timeZone === "string" ? { timeZone: body.timeZone } : {}) })); return; }
+      if (method === "PATCH" && ruleMatch) { requireSession(sessions, sessionToken); const body = await readJson(request); sendJson(response, 200, notifications.updateRule(decodedPathSegment(ruleMatch[1] ?? ""), { ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}), ...(typeof body.cooldownSeconds === "number" ? { cooldownSeconds: body.cooldownSeconds } : {}), ...(body.quietStart === null || typeof body.quietStart === "string" ? { quietStart: body.quietStart } : {}), ...(body.quietEnd === null || typeof body.quietEnd === "string" ? { quietEnd: body.quietEnd } : {}), ...(typeof body.timeZone === "string" ? { timeZone: body.timeZone } : {}) })); return; }
       if (method === "GET" && pathname === "/api/notifications/history") { requireSession(sessions, sessionToken); sendJson(response, 200, notifications.listHistory(Number(url.searchParams.get("limit")) || 100)); return; }
 
       if (method === "GET" && pathname === "/api/automation/jobs") { requireSession(sessions, sessionToken); sendJson(response, 200, scheduler.listJobs()); return; }
       const jobMatch = pathname.match(/^\/api\/automation\/jobs\/([^/]+)$/);
-      if (method === "PATCH" && jobMatch) { requireSession(sessions, sessionToken); const body = await readJson(request); sendJson(response, 200, scheduler.updateJob(decodeURIComponent(jobMatch[1] ?? ""), { ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}), ...(typeof body.intervalSeconds === "number" ? { intervalSeconds: body.intervalSeconds } : {}) })); return; }
+      if (method === "PATCH" && jobMatch) { requireSession(sessions, sessionToken); const body = await readJson(request); sendJson(response, 200, scheduler.updateJob(decodedPathSegment(jobMatch[1] ?? ""), { ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}), ...(typeof body.intervalSeconds === "number" ? { intervalSeconds: body.intervalSeconds } : {}) })); return; }
       const jobRunMatch = pathname.match(/^\/api\/automation\/jobs\/([^/]+)\/run$/);
-      if (method === "POST" && jobRunMatch) { requireSession(sessions, sessionToken); sendJson(response, 200, await scheduler.runNow(decodeURIComponent(jobRunMatch[1] ?? ""))); return; }
+      if (method === "POST" && jobRunMatch) { requireSession(sessions, sessionToken); sendJson(response, 200, await scheduler.runNow(decodedPathSegment(jobRunMatch[1] ?? ""))); return; }
       if (method === "GET" && pathname === "/api/automation/runs") { requireSession(sessions, sessionToken); sendJson(response, 200, scheduler.listRuns(Number(url.searchParams.get("limit")) || 100)); return; }
 
       if (method === "GET" && pathname === "/api/settings/retention") { requireSession(sessions, sessionToken); sendJson(response, 200, retention.getSettings()); return; }
@@ -233,10 +261,14 @@ export function createCoreApp(options: CoreAppOptions) {
       if (method === "POST" && pathname === "/api/backups/restore") {
         requireSession(sessions, sessionToken);
         const body = await readJson(request);
+        if (restoreInProgress) throw new CoreError("restore_in_progress", 409, "数据库恢复已在进行中。");
+        restoreInProgress = true;
         const id = stringField(body, "id").trim();
         const expectedSha256 = stringField(body, "expectedSha256").trim().toLowerCase();
-        if (!id) throw new CoreError("backup_id_required", 400, "数据库恢复需要备份 id。");
-        const prepared = await requireBackups(backups).prepareRestore(id, expectedSha256);
+        if (!id) { restoreInProgress = false; throw new CoreError("backup_id_required", 400, "数据库恢复需要备份 id。"); }
+        let prepared;
+        try { prepared = await requireBackups(backups).prepareRestore(id, expectedSha256); }
+        catch (error) { restoreInProgress = false; throw error; }
         sendJson(response, 202, prepared.result);
 
         response.once("finish", () => {
@@ -253,8 +285,14 @@ export function createCoreApp(options: CoreAppOptions) {
               });
           });
           try {
+            quiesceRuntime();
             server.close();
+            server.closeIdleConnections();
+            const forceCloseTimer = setTimeout(() => server.closeAllConnections(), 5_000);
+            forceCloseTimer.unref();
+            server.once("close", () => clearTimeout(forceCloseTimer));
           } catch (error) {
+            restoreInProgress = false;
             prepared.cancel();
             const message = error instanceof Error ? error.message : "unknown close error";
             console.error(`[core] unable to stop server for SQLite restore: ${message}`);
@@ -353,12 +391,12 @@ export function createCoreApp(options: CoreAppOptions) {
         const connectionId = url.searchParams.get("connectionId")?.trim() ?? "";
         if (!connectionId) throw new CoreError("connection_required", 400, "读取配置快照需要 connectionId。");
         connections.get(connectionId);
-        sendJson(response, 200, profileHistory.get(connectionId, decodeURIComponent(profileHistoryMatch[1] ?? "")));
+        sendJson(response, 200, profileHistory.get(connectionId, decodedPathSegment(profileHistoryMatch[1] ?? "")));
         return;
       }
 
       const proxyMatch = pathname.match(/^\/api\/surge\/([^/]+)(\/v1(?:\/.*)?)$/);
-      if (proxyMatch) { const session = requireSession(sessions, sessionToken); const id = decodeURIComponent(proxyMatch[1] ?? ""); const apiPath = `${proxyMatch[2] ?? "/v1"}${url.search}`; const body = method === "GET" || method === "HEAD" ? null : await readBuffer(request, MAX_PROXY_BODY_BYTES); const result = await surge.request(connections.getCredentials(id, session.vaultKey), method, apiPath, body && body.length > 0 ? body : null, { accept: typeof request.headers.accept === "string" ? request.headers.accept : undefined, contentType: typeof request.headers["content-type"] === "string" ? request.headers["content-type"] : undefined }); response.statusCode = result.statusCode; response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff"); if (result.contentType) response.setHeader("Content-Type", result.contentType); response.end(result.body); return; }
+      if (proxyMatch) { const session = requireSession(sessions, sessionToken); const id = decodedPathSegment(proxyMatch[1] ?? ""); const apiPath = `${proxyMatch[2] ?? "/v1"}${url.search}`; const body = method === "GET" || method === "HEAD" ? null : await readBuffer(request, MAX_PROXY_BODY_BYTES); const result = await surge.request(connections.getCredentials(id, session.vaultKey), method, apiPath, body && body.length > 0 ? body : null, { accept: typeof request.headers.accept === "string" ? request.headers.accept : undefined, contentType: typeof request.headers["content-type"] === "string" ? request.headers["content-type"] : undefined }); response.statusCode = result.statusCode; response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff"); if (result.contentType) response.setHeader("Content-Type", result.contentType); response.end(result.body); return; }
 
       sendJson(response, 404, { error: { code: "not_found", message: "API endpoint not found." } });
     } catch (error) {

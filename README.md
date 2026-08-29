@@ -89,7 +89,7 @@ Session idle:     30 minutes
 Session absolute: 12 hours
 ```
 
-可通过环境变量覆盖：
+裸跑 Core 时可通过以下环境变量覆盖；Compose 固定内部 Host、Port 与 `/data`，并从 `.env` 转发 Session 和 Update Check 配置：
 
 ```text
 SLC_HOST
@@ -134,7 +134,7 @@ surge-console   Nginx + React UI   绑定 127.0.0.1:8080
 surge-core      Node Core          internal :8787（不发布宿主机端口）
 ```
 
-生产 SQLite 存放在 Compose named volume surge-console-data → /data/surge-console.db。Web 容器依赖 Core health check 通过后启动。宿主机绑定回环地址以便通过 Tailscale / 反向代理安全暴露（例如 Tailscale serve 转发至 127.0.0.1:8080）。
+生产 SQLite 存放在 Compose named volume surge-console-data → /data/surge-console.db。Web 容器依赖 Core health check 通过后启动。宿主机绑定回环地址以便通过 Tailscale / 反向代理安全暴露（例如转发至 127.0.0.1:8080）。首次开放访问前请立即完成 PIN 初始化，避免未初始化实例被其他网络用户抢先设置。若改用宿主 bind mount，请确保目录由容器 UID 1000 拥有且权限为 0700。
 
 打开 http://<宿主机地址>:8080。可选构建标识：
 

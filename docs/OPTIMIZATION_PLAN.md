@@ -226,7 +226,7 @@ Traffic Chart
 │ Recent Requests                  │ Recent Events     │
 │                                  │                   │
 │ chatgpt.com       10ms           │ Profile reloaded │
-│ api.deepseek.com   4ms           │ ...               │
+│ api.example.com   4ms           │ ...               │
 │ tailscale.com      2ms           │                   │
 │                                  │                   │
 │ View All →                       │ View All →        │
@@ -975,7 +975,7 @@ Type         Content                     Policy
 RULE-SET     LAN                         DIRECT
 RULE-SET     ChinaMedia.list             DIRECT
 RULE-SET     OpenAI.list                 Proxy
-DOMAIN       api.deepseek.com            DIRECT
+DOMAIN       api.example.com            DIRECT
 FINAL        —                           Proxy
 
 底部: 136 Rules

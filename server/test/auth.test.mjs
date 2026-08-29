@@ -26,6 +26,10 @@ async function startCore() {
 function sessionCookie(response) {
   const setCookie = response.headers.get("set-cookie");
   assert.ok(setCookie, "session cookie should be returned");
+  assert.match(setCookie, /; HttpOnly/i);
+  assert.match(setCookie, /; SameSite=Strict/i);
+  assert.ok(setCookie.includes("; Path=/"));
+  assert.match(setCookie, /; Max-Age=[0-9]+/i);
   return setCookie.split(";", 1)[0];
 }
 
@@ -58,6 +62,9 @@ test("auth bootstrap, lock and unlock lifecycle", async () => {
       headers: { cookie },
     });
     assert.equal((await authenticated.json()).authenticated, true);
+
+    const unauthenticatedLock = await fetch(`${core.baseUrl}/api/auth/lock`, { method: "POST" });
+    assert.equal(unauthenticatedLock.status, 401);
 
     const lock = await fetch(`${core.baseUrl}/api/auth/lock`, {
       method: "POST",
@@ -99,6 +106,14 @@ test("auth bootstrap, lock and unlock lifecycle", async () => {
 test("setup rejects non-4-digit PINs and health reports SQLite", async () => {
   const core = await startCore();
   try {
+    const rejectedOrigin = await fetch(`${core.baseUrl}/api/auth/setup`, {
+      method: "POST",
+      headers: { origin: "https://attacker.example", "content-type": "application/json" },
+      body: JSON.stringify({ password: "4829", confirmPassword: "4829" }),
+    });
+    assert.equal(rejectedOrigin.status, 403);
+    assert.equal((await rejectedOrigin.json()).error.code, "origin_rejected");
+
     const health = await fetch(`${core.baseUrl}/api/health`);
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), {
@@ -130,6 +145,39 @@ test("setup rejects non-4-digit PINs and health reports SQLite", async () => {
     });
     assert.equal(mismatch.status, 400);
     assert.equal((await mismatch.json()).error.code, "password_mismatch");
+  } finally {
+    await core.close();
+  }
+});
+
+test("unlock limiting ignores spoofed X-Forwarded-For values", async () => {
+  const core = await startCore();
+  try {
+    const setup = await fetch(`${core.baseUrl}/api/auth/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "4829", confirmPassword: "4829" }),
+    });
+    assert.equal(setup.status, 201);
+    const cookie = sessionCookie(setup);
+    const lock = await fetch(`${core.baseUrl}/api/auth/lock`, { method: "POST", headers: { cookie } });
+    assert.equal(lock.status, 200);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(`${core.baseUrl}/api/auth/unlock`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": `198.51.100.${attempt + 1}` },
+        body: JSON.stringify({ password: "0000" }),
+      });
+      assert.equal(response.status, 401);
+    }
+    const blocked = await fetch(`${core.baseUrl}/api/auth/unlock`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.99" },
+      body: JSON.stringify({ password: "0000" }),
+    });
+    assert.equal(blocked.status, 429);
+    assert.equal((await blocked.json()).error.code, "too_many_attempts");
   } finally {
     await core.close();
   }

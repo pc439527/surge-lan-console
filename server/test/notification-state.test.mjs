@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { test } from "node:test";
 import { AppDatabase } from "../dist/database.js";
 import { EventBus } from "../dist/event-bus.js";
-import { NotificationService } from "../dist/notification-service.js";
+import { isForbiddenNotificationAddress, NotificationService } from "../dist/notification-service.js";
 import { RuntimeVault } from "../dist/runtime-vault.js";
 import { SecretVault } from "../dist/secret-vault.js";
 
@@ -11,6 +11,15 @@ function hhmm(totalMinutes) {
   const value = (totalMinutes + 1440) % 1440;
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
+
+test("Bark target validation rejects local and link-local addresses", () => {
+  assert.equal(isForbiddenNotificationAddress("127.0.0.1"), true);
+  assert.equal(isForbiddenNotificationAddress("169.254.169.254"), true);
+  assert.equal(isForbiddenNotificationAddress("::1"), true);
+  assert.equal(isForbiddenNotificationAddress("fe80::1"), true);
+  assert.equal(isForbiddenNotificationAddress("192.168.50.10"), false);
+  assert.equal(isForbiddenNotificationAddress("192.0.2.10"), false);
+});
 
 test("quiet-hour failure does not create a standalone recovery notification", async () => {
   const db = new AppDatabase(":memory:");
@@ -22,7 +31,7 @@ test("quiet-hour failure does not create a standalone recovery notification", as
   const service = new NotificationService(db, vault, runtime, bus);
 
   try {
-    const channel = service.saveChannel({ name: "Bark", endpoint: "http://127.0.0.1:9/device-key" }, key);
+    const channel = service.saveChannel({ name: "Bark", endpoint: "http://192.0.2.10:9/device-key" }, key);
     const rule = db.queryOne(
       "SELECT id FROM notification_rules WHERE channel_id = ? AND event_type = 'device-offline'",
       channel.id,

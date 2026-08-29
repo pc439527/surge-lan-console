@@ -41,12 +41,12 @@ const FIXTURES: RequestItem[] = [
   makeRequest({
     id: 1,
     method: "HTTPS",
-    hostname: "api-docs.deepseek.com",
-    URL: "https://api-docs.deepseek.com/openapi.json",
+    hostname: "docs.example.com",
+    URL: "https://docs.example.com/openapi.json",
     remoteAddress: "192.0.2.10:443",
     policyName: "Test Proxy 02",
-    rule: "DOMAIN-SUFFIX,deepseek.com",
-    requestHeader: ["GET /openapi.json HTTP/1.1", "Host: api-docs.deepseek.com"].join("\n"),
+    rule: "DOMAIN-SUFFIX,example.com",
+    requestHeader: ["GET /openapi.json HTTP/1.1", "Host: docs.example.com"].join("\n"),
     notes: ["[Rule] Rule evaluating..."],
     timingRecords: [{ name: "TLS Handshake", durationInMillisecond: 6 }],
     inBytes: 1_618,
@@ -123,7 +123,7 @@ describe("RequestsPage (Request Inspector V2)", () => {
   it("renders parsed request headers and notes for HTTPS rows", async () => {
     const user = userEvent.setup();
     renderPage({ getRecentRequests: vi.fn().mockResolvedValue(FIXTURES) });
-    const hosts = await screen.findAllByText("api-docs.deepseek.com");
+    const hosts = await screen.findAllByText("docs.example.com");
     await user.click(hosts[0]);
     const dialog = screen.getByRole("dialog");
     await user.click(await within(dialog).findByRole("button", { name: "请求" }));

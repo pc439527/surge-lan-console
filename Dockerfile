@@ -3,14 +3,13 @@
 #   - build time is generated at build time
 #   - GIT_COMMIT / GIT_BRANCH are optional build args; when omitted the UI
 #     reports "unknown" instead of a stale hard-coded revision.
-ARG APP_VERSION=local
-# ── Build identity (OPTIMIZATION_PLAN §84–85) ─────────────────
+# ── Build identity ─────────────────────────────────────────────
 #   docker build \
-#     --build-arg APP_VERSION=0.2.1 \
+#     --build-arg APP_VERSION=0.5.0 \
 #     --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
-#     --build-arg BUILD_TIME=$(date -Iseconds) \
+#     --build-arg GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD) \
 #     -t surge-lan-console:$(git rev-parse --short HEAD) .
-ARG APP_VERSION=0.2.1
+ARG APP_VERSION=0.5.0
 ARG GIT_COMMIT=unknown
 ARG GIT_BRANCH=unknown
 
@@ -29,10 +28,10 @@ ARG GIT_BRANCH
 RUN if [ -n "$GIT_COMMIT" ] && [ "$GIT_COMMIT" != "unknown" ]; then export VITE_GIT_COMMIT="$GIT_COMMIT"; fi; \
     if [ -n "$GIT_BRANCH" ] && [ "$GIT_BRANCH" != "unknown" ]; then export VITE_GIT_BRANCH="$GIT_BRANCH"; fi; \
     export VITE_APP_ENV=production; \
-    pnpm build
+    pnpm build:web
 
 # ── Stage 2: serve ──────────────────────────────────────────────
-FROM nginx:1.27-alpine AS serve
+FROM nginx:1.28-alpine AS serve
 
 ARG APP_VERSION
 ARG GIT_COMMIT

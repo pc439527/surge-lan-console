@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
+import { isIP } from "node:net";
 import { request as httpsRequest } from "node:https";
 import type { AppDatabase } from "./database.js";
 import type { ConsoleEvent, ConsoleEventType, EventBus } from "./event-bus.js";
@@ -79,6 +81,28 @@ export interface NotificationHistoryItem {
   status: "sent" | "error" | "suppressed";
   errorMessage: string | null;
   createdAt: string;
+}
+
+export function isForbiddenNotificationAddress(address: string): boolean {
+  const normalized = address.toLowerCase().split("%")[0] ?? "";
+  if (isIP(normalized) === 4) {
+    const [a, b] = normalized.split(".").map(Number);
+    return a === 0 || a === 127 || (a === 169 && b === 254) || a >= 224;
+  }
+  if (isIP(normalized) === 6) {
+    return normalized === "::" || normalized === "::1" || normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb") || normalized.startsWith("ff");
+  }
+  return true;
+}
+
+async function resolveNotificationTarget(hostname: string): Promise<{ address: string; family: number }> {
+  let results;
+  try { results = await lookup(hostname, { all: true, verbatim: true }); }
+  catch { throw new CoreError("bark_unreachable", 502, "无法解析 Bark 服务地址。"); }
+  if (results.length === 0 || results.some((entry) => isForbiddenNotificationAddress(entry.address))) {
+    throw new CoreError("invalid_bark_endpoint", 400, "Bark 服务解析到了禁止访问的地址。");
+  }
+  return results[0] as { address: string; family: number };
 }
 
 export class NotificationService {
@@ -294,9 +318,19 @@ export class NotificationService {
   private async sendBark(endpoint: string, title: string, body: string): Promise<void> {
     const target = new URL(endpoint);
     target.pathname = `${target.pathname.replace(/\/$/, "")}/${encodeURIComponent(title)}/${encodeURIComponent(body)}`;
+    const resolved = await resolveNotificationTarget(target.hostname);
     const requestFn = target.protocol === "https:" ? httpsRequest : httpRequest;
     await new Promise<void>((resolve, reject) => {
-      const request = requestFn(target, { method: "GET", headers: { Accept: "application/json" } }, (response) => {
+      const request = requestFn({
+        protocol: target.protocol,
+        hostname: resolved.address,
+        family: resolved.family,
+        port: target.port || undefined,
+        path: `${target.pathname}${target.search}`,
+        method: "GET",
+        servername: target.protocol === "https:" ? target.hostname : undefined,
+        headers: { Accept: "application/json", Host: target.host },
+      }, (response) => {
         response.resume();
         response.on("end", () => {
           const status = response.statusCode ?? 500;
@@ -344,8 +378,11 @@ export class NotificationService {
   private validateBarkEndpoint(endpoint: string): void {
     let url: URL;
     try { url = new URL(endpoint); } catch { throw new CoreError("invalid_bark_endpoint", 400, "Bark Token 地址不是有效 URL。"); }
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname === "/") {
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname === "/") {
       throw new CoreError("invalid_bark_endpoint", 400, "Bark Token 地址必须是包含 Device Key 的 HTTP(S) URL。");
+    }
+    if (isIP(url.hostname) && isForbiddenNotificationAddress(url.hostname)) {
+      throw new CoreError("invalid_bark_endpoint", 400, "Bark Token 地址不能指向本机、链路本地或保留地址。");
     }
   }
 

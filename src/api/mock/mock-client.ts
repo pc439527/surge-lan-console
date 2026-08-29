@@ -91,13 +91,13 @@ interface MockRequestSeed {
 const MOCK_REQUEST_SEEDS: MockRequestSeed[] = [
   {
     method: "HTTPS",
-    hostname: "api-docs.deepseek.com",
-    url: "https://api-docs.deepseek.com/openapi.json",
+    hostname: "docs.example.com",
+    url: "https://docs.example.com/openapi.json",
     remoteAddress: "192.0.2.10:443",
     status: "Completed",
-    rule: "DOMAIN-SUFFIX,deepseek.com",
+    rule: "DOMAIN-SUFFIX,example.com",
     policyName: "Test Proxy 02",
-    requestHeader: ["GET /openapi.json HTTP/1.1", "Host: api-docs.deepseek.com", "User-Agent: DeepSeek-CLI/0.23.1", "Accept: application/json"].join("\n"),
+    requestHeader: ["GET /openapi.json HTTP/1.1", "Host: docs.example.com", "User-Agent: ExampleClient/1.0", "Accept: application/json"].join("\n"),
     notes: ["[Rule] Rule evaluating...", "[DNS] Use 203.0.113.53 for lookup", "[MITM] Decrypted using CA certificate"],
     timing: [
       { name: "Rule Evaluating", durationInMillisecond: 7 },
@@ -113,13 +113,13 @@ const MOCK_REQUEST_SEEDS: MockRequestSeed[] = [
   },
   {
     method: "HTTPS",
-    hostname: "api.deepseek.com",
-    url: "https://api.deepseek.com/v1/chat/completions",
+    hostname: "api.example.com",
+    url: "https://api.example.com/v1/chat/completions",
     remoteAddress: "198.51.100.10:443",
     status: "Completed",
-    rule: "DOMAIN-SUFFIX,deepseek.com",
+    rule: "DOMAIN-SUFFIX,example.com",
     policyName: "Test Proxy 02",
-    requestHeader: ["POST /v1/chat/completions HTTP/1.1", "Host: api.deepseek.com", "Content-Type: application/json", "Authorization: Bearer sk-***", "User-Agent: DeepSeek-CLI/0.23.1"].join("\n"),
+    requestHeader: ["POST /v1/chat/completions HTTP/1.1", "Host: api.example.com", "Content-Type: application/json", "Authorization: Bearer sk-***", "User-Agent: ExampleClient/1.0"].join("\n"),
     notes: ["[Script] ad-block: pass", "[Rewrite] skip: not matched"],
     timing: [
       { name: "Rule Evaluating", durationInMillisecond: 5 },
